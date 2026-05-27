@@ -3,6 +3,9 @@
 ;; Defer garbage collection further back in the startup process
 (setq gc-cons-threshold most-positive-fixnum)
 
+;; Prevent font-cache compaction on every GC (big win on Windows with icons)
+(setq inhibit-compacting-font-caches t)
+
 ;; Prevent the glimpse of un-styled Emacs by disabling these UI elements early.
 (push '(menu-bar-lines . 0) default-frame-alist)
 (push '(tool-bar-lines . 0) default-frame-alist)
@@ -16,7 +19,9 @@
 ;; Ignore X resources; its settings would be redundant with the other settings
 ;; in this file and can conflict with later config (particularly where the
 ;; cursor color is concerned).
-(advice-add #'x-apply-session-resources :override #'ignore)
+;; Guard: x-apply-session-resources doesn't exist on windows-nt.
+(when (fboundp 'x-apply-session-resources)
+  (advice-add #'x-apply-session-resources :override #'ignore))
 
 ;; native-comp: reduce verbosity
 (setq native-comp-async-report-warnings-errors nil)

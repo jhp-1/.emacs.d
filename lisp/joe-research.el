@@ -3,35 +3,34 @@
 ;;;;; citar
 (use-package citar
   :ensure t
+  :demand t
   :custom
-  (citar-bibliography '("~/Texts/My Library.bib"))
+  ;; joe/texts-dir resolves to d:/Texts on Windows, /mnt/d/Texts in WSL.
+  (citar-bibliography (list (expand-file-name "My Library.bib" joe/texts-dir)))
   (org-cite-insert-processor 'citar)
   (org-cite-follow-processor 'citar)
   (org-cite-activate-processor 'citar)
-  (citar-library-paths '("~/Texts/"))
+  (citar-library-paths (list (file-name-as-directory (expand-file-name joe/texts-dir))))
   :bind
   ("C-c f o" . citar-open-files)
   ("C-c f a" . citar-add-file-to-last-added)
-  ("C-c f A" . citar-add-file-to-library))
-
-
-
-(defun citar-add-file-to-last-added ()
-  (interactive)
-  (let ((original-buffer (current-buffer))
-        (bib-file (car citar-bibliography)))
-    (with-temp-buffer
-      (insert-file-contents bib-file)
-      (end-of-buffer)
-      (search-backward "@")
-      (search-forward "{")
-      (set-mark (point))
-      (search-forward ",")
-      (backward-char)
-      (let ((last-citekey (buffer-substring-no-properties (mark) (point))))
-        (pop-to-buffer original-buffer)
-        (citar-add-file-to-library last-citekey)))))
-
+  ("C-c f A" . citar-add-file-to-library)
+  :config
+  (defun citar-add-file-to-last-added ()
+    (interactive)
+    (let ((original-buffer (current-buffer))
+          (bib-file (car citar-bibliography)))
+      (with-temp-buffer
+        (insert-file-contents bib-file)
+        (end-of-buffer)
+        (search-backward "@")
+        (search-forward "{")
+        (set-mark (point))
+        (search-forward ",")
+        (backward-char)
+        (let ((last-citekey (buffer-substring-no-properties (mark) (point))))
+          (pop-to-buffer original-buffer)
+          (citar-add-file-to-library last-citekey))))))
   
 
 (use-package citar-embark
@@ -51,14 +50,25 @@
 ;;;;; zotra
 (use-package zotra
   :ensure t
+  :demand t
   :bind (("C-c f z" . zotra-add-entry))
-  :config
-  (setq zotra-backend 'zotra-server
-        zotra-local-server-directory "~/.local/share/zotra-server"
-        zotra-default-bibliography "~/Texts/My Library.bib"
-        zotra-default-entry-format "bibtex"
-        zotra-default-entry-fields '(author title journal year volume number pages doi url abstract)))
+  :custom
+  (zotra-backend 'zotra-server)
+  (zotra-local-server-directory nil)
+  (zotra-server-path "http://127.0.0.1:1969")
+  (zotra-default-bibliography (list (expand-file-name "My Library.bib" joe/texts-dir)))
+  (zotra-default-entry-format "bibtex")
+  (zotra-use-curl nil)
+  (zotra-default-entry-fields
+   '(author title journal year volume number pages doi url abstract)))
 
+(when (eq system-type 'windows-nt)
+  ;; MinGW64 DLLs must come before Git for Windows
+  (setenv "PATH" (concat "C:\\msys64\\mingw64\\bin;" (getenv "PATH")))
+  (add-to-list 'exec-path "C:/msys64/mingw64/bin")
+  (setq pdf-info-epdfinfo-program "C:/msys64/mingw64/bin/epdfinfo.exe")
+  ;; epdfinfo requires unix line endings
+  (prefer-coding-system 'utf-8-unix))
 (use-package pdf-tools
   :ensure t
   :defer t
@@ -324,13 +334,19 @@ Works from Dired buffer with DOI in filename."
       (save-buffer))
     (message "Added %d new annotation%s" added (if (= added 1) "" "s"))))
 
+(defun joe/--pdfannots-command (pdf-path)
+  "Return the command list to invoke pdfannots on PDF-PATH."
+  (if (eq system-type 'windows-nt)
+      (list "pdfannots-wsl.cmd" pdf-path)
+    (list "pdfannots" "--no-group" pdf-path)))
+
 (defun joe/--run-pdfannots-async (pdf-path target-buf)
   "Run pdfannots on PDF-PATH and merge into TARGET-BUF when done."
   (let ((out-buf (generate-new-buffer " *pdfannots-output*")))
     (make-process
      :name "pdfannots"
      :buffer out-buf
-     :command (list "python3" joe/pdfannots-script "--no-group" pdf-path)
+     :command (joe/--pdfannots-command pdf-path)  
      :sentinel (lambda (proc _event)
                  (when (eq (process-status proc) 'exit)
                    (let ((output (with-current-buffer out-buf (buffer-string))))
@@ -373,3 +389,22 @@ Works from Dired buffer with DOI in filename."
 
 (provide 'joe-research)
 ;;; joe-research.el ends here
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -87,14 +87,31 @@
   :bind
   ("C-c i" . gptel)
   :config
-  (setq gptel-model   'deepseek/deepseek-r1:free
-	gptel-backend
-	(gptel-make-openai "OpenRouter"
-        :host "openrouter.ai"
-        :endpoint "/api/v1/chat/completions"
-        :stream t
-        :key (lambda () (getenv "OPENROUTER_API_KEY"))
-        :models '(deepseek/deepseek-r1:free)))
+  ;; OpenRouter backend (free DeepSeek as default)
+  (gptel-make-openai "OpenRouter"
+    :host "openrouter.ai"
+    :endpoint "/api/v1/chat/completions"
+    :stream t
+    :key (lambda () (getenv "OPENROUTER_API_KEY"))
+    :models '(deepseek/deepseek-r1:free
+              openai/gpt-4o
+              google/gemini-2.0-flash-001))
+
+  ;; Anthropic / Claude backend — uses ANTHROPIC_API_KEY from environment.
+  (gptel-make-anthropic "Claude"
+    :stream t
+    :key (lambda () (getenv "ANTHROPIC_API_KEY"))
+    :models '(claude-sonnet-4-6
+              claude-opus-4-7
+              claude-haiku-4-5-20251001))
+
+  ;; Default to Claude Sonnet; fall back to OpenRouter if no key is set.
+  (setq gptel-backend
+        (if (and (getenv "ANTHROPIC_API_KEY")
+                 (not (string-empty-p (getenv "ANTHROPIC_API_KEY"))))
+            (alist-get "Claude" gptel--backends nil nil #'equal)
+          (alist-get "OpenRouter" gptel--backends nil nil #'equal)))
+  (setq gptel-model 'claude-sonnet-4-6)
   (setq gptel-default-mode 'markdown-mode))
 
 ;;;; eww
@@ -118,7 +135,13 @@
                "C:/msys64/usr/bin"
                "C:/msys64/mingw64/bin"
                "C:/Users/Joe/bin"))
-    (add-to-list 'exec-path p t)))
+    (add-to-list 'exec-path p t))
+  ;; Pipe performance: eliminate the ~50 ms per-read latency Emacs adds by
+  ;; default on Windows.  This significantly speeds up magit, rg, notmuch and
+  ;; any other subprocess-heavy workflow.
+  (setq w32-pipe-read-delay 0)
+  (setq w32-pipe-buffer-size (* 64 1024))
+  (setq process-adaptive-read-buffering nil))
 
 ;;;; agent-shell / ACP / Claude Code via OpenRouter / Goose
 
@@ -137,6 +160,8 @@
   :ensure t
   :init
   (setq exec-path-from-shell-arguments '("-l"))
+  ;; Pin to bash so this works regardless of the user's default WSL shell.
+  (setq exec-path-from-shell-shell-name "/bin/bash")
   :config
   ;; fish is supported directly
   (dolist (var '("PATH"

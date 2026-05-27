@@ -17,6 +17,13 @@
 (setq package-auto-update-interval 0)
 (setq package-check-update-on-load nil)
 
+;;;;; compile-angel
+(use-package compile-angel
+  :ensure t
+  :demand t
+  :config
+  (compile-angel-on-load-mode)
+  (add-hook 'emacs-lisp-mode-hook #'compile-angel-on-save-local-mode))
 ;;;; auto-package-update
 (use-package auto-package-update
   :ensure t
@@ -25,17 +32,46 @@
   (setq auto-package-update-delete-old-versions t)
   (setq auto-package-update-interval 7))
 
+;;;; Cross-platform path constants
+;; Used by joe-org-notes.el, joe-research.el etc. so they don't hardcode drive letters.
+(defconst joe/notes-dir
+  (if (eq system-type 'windows-nt) "d:/Notes" "/mnt/d/Notes")
+  "Root directory for Denote notes.")
+
+(defconst joe/texts-dir
+  (if (eq system-type 'windows-nt) "d:/Texts" "/mnt/d/Texts")
+  "Root directory for PDFs and bibliography.")
+
+;;;; WSL <-> Windows path translation helpers
+(defun joe/wsl-to-win-path (path)
+  "Convert a WSL path like /mnt/d/foo to a Windows path d:/foo."
+  (replace-regexp-in-string
+   "^/mnt/\\([a-z]\\)/"
+   (lambda (_m) (concat (upcase (match-string 1)) ":/"))
+   path))
+
+(defun joe/win-to-wsl-path (path)
+  "Convert a Windows path like d:/foo to a WSL path /mnt/d/foo."
+  (replace-regexp-in-string
+   "\\([A-Za-z]\\):[\\/]"
+   (lambda (_m) (concat "/mnt/" (downcase (match-string 1)) "/"))
+   path))
+
 ;;;; Environment settings
 ;; On Windows, PATH and exec-path are managed explicitly in joe-tools.el.
-;; These Linux-only tweaks add nvm Node and ~/.local/bin to the path for
-;; Linux/WSL Emacs instances only.
+;; These Linux-only tweaks add the active nvm Node and ~/.local/bin to the
+;; path for Linux/WSL Emacs instances only.
 (when (memq system-type '(gnu gnu/linux gnu/kfreebsd))
-  (setenv "PATH" (concat (expand-file-name "~/.nvm/versions/node/v14.21.3/bin") ":"
-                         (expand-file-name "~/.local/bin") ":"
-                         (getenv "PATH")))
-  (setq exec-path (append (list (expand-file-name "~/.nvm/versions/node/v14.21.3/bin")
-                                (expand-file-name "~/.local/bin"))
-                          exec-path)))
+  ;; Dynamically find the newest installed nvm Node instead of a hardcoded version.
+  (let* ((nvm-root (expand-file-name "~/.nvm/versions/node"))
+         (node-bin
+          (when (file-directory-p nvm-root)
+            (let ((versions (sort (directory-files nvm-root t "^v" t) #'string>)))
+              (when versions
+                (expand-file-name "bin" (car versions)))))))
+    (dolist (dir (delq nil (list node-bin (expand-file-name "~/.local/bin"))))
+      (setenv "PATH" (concat dir ":" (getenv "PATH")))
+      (add-to-list 'exec-path dir))))
 
 ;;;; Custom lisp code
 (let ((default-directory (expand-file-name (concat user-emacs-directory "lisp"))))
@@ -76,7 +112,7 @@
 (keymap-global-set "<f7>" (lambda ()
 	    (interactive)
 	    (hide-mode-line-mode 'toggle)))
-
+(keymap-global-set "M-<f4>" 'delete-frame)
 (put 'narrow-to-region 'disabled nil)
 (put 'downcase-region 'disabled nil)
 

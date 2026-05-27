@@ -12,7 +12,7 @@
   (setq dired-recursive-copies 'always
         dired-recursive-deletes 'always
         delete-by-moving-to-trash t
-        dired-listing-switches "-lv --group-directories-first -h"
+        dired-listing-switches "-lav --group-directories-first -h"
         dired-dwim-target t
         dired-auto-revert-buffer #'dired-directory-changed-p
         wdired-allow-to-change-permissions t
@@ -70,9 +70,10 @@
   :hook (ibuffer-mode . nerd-icons-ibuffer-mode))
 
 ;;;; General Dired optimizations
-(setq dired-listing-switches "-alh --group-directories-first")  ; Faster `ls` flags
-(setq dired-omit-mode t)  ; Hide non-essential files
-(setq inhibit-compacting-font-caches t)  ; If using many icons
+;; dired-listing-switches is set canonically in the dired use-package block above
+;; ("-lav --group-directories-first -h"); do not duplicate it here.
+(add-hook 'dired-mode-hook #'dired-omit-mode)  ; Hide non-essential files per buffer
+;; inhibit-compacting-font-caches is now set in early-init.el
 (setq nerd-icons-dired-disable-submodule-check t)  ; If this option exists
 
 (provide 'joe-files)

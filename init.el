@@ -1,8 +1,7 @@
 ;;; init.el --- Main init -*- lexical-binding: t; -*-
 
-;; Increase GC threshold during startup for faster loading
-(setq gc-cons-threshold (* 512 1024 1024)) ; 512MB - even higher for faster startup
-(setq gc-cons-percentage 0.8) ; Increase percentage to reduce GC frequency
+;; GC threshold already maximised in early-init.el; just disable the file-name
+;; handler for faster require calls during startup.
 (setq file-name-handler-alist-original file-name-handler-alist)
 (setq file-name-handler-alist nil)
 
@@ -19,6 +18,9 @@
   (setq x-gtk-use-system-tooltips nil))
 
 (add-to-list 'load-path (expand-file-name "lisp" user-emacs-directory))
+;; wsl.exe lives here; only meaningful on Windows
+(when (eq system-type 'windows-nt)
+  (add-to-list 'exec-path "C:/Windows/System32"))
 
 ;; Load startup profiling if needed
 ;; (require 'startup-profiling) ; Uncomment to enable profiling

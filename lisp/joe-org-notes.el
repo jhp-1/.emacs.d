@@ -36,16 +36,18 @@
   (setq org-use-speed-commands t)
   (setq org-goto-max-level 3)
   (setq org-hide-block-startup t)
-  (setq org-agenda-files '("~/Notes"))
+  ;; Use joe/notes-dir so this works from both Windows and WSL Emacs.
+  (setq org-agenda-files (list joe/notes-dir))
   (setq org-startup-folded 'fold)
   (setq org-capture-templates
-        '(("l" "Link" entry (file+headline "~/Notes/20240410T184722--reading-list__life_reading.org" "Websites"))	
-
+        `(("l" "Link" entry
+           (file+headline ,(expand-file-name "20240410T184722--reading-list__life_reading.org" joe/notes-dir) "Websites")
+           "* %?\n  %a")
           ("t" "Task" entry
-           (file "~/Notes/20241021T152220--tasks.org")
+           (file ,(expand-file-name "20241021T152220--tasks.org" joe/notes-dir))
            "* TODO %?\n  SCHEDULED: %t")
 
-	  ("n" "New note (with Denote)" plain
+          ("n" "New note (with Denote)" plain
            (file denote-last-path)
            #'denote-org-capture
            :no-save t
@@ -53,7 +55,7 @@
            :kill-buffer t
            :jump-to-captured t)
 
-	  ("j" "Denote journal entry for TODAY" plain
+          ("j" "Denote journal entry for TODAY" plain
            (file denote-last-path)
            #'denote-journal-extras-new-or-existing-entry
            :no-save t
@@ -61,36 +63,33 @@
            :kill-buffer t
            :jump-to-captured t)))
   (setq org-todo-keywords
-	'((sequence "TODO(t)" "CANCEL(c!)" "DONE(d!)")))
-  :hook
-  (org-mode . abbrev-mode)
-  :bind
-  ("C-c c" . org-capture)
-  ("C-c a" . org-agenda))
+        '((sequence "TODO(t)" "CANCEL(c!)" "DONE(d!)")))
 
-;;;;; Notifications for org-agenda events
-(use-package org
-  :config
-  (appt-activate t)
+  ;;;;; Notifications for org-agenda events (merged here from second use-package org block)
+  (appt-activate nil)
   (setq appt-message-warning-time 60)
   (setq appt-display-duration 5)
   (setq appt-display-mode-line nil)
-  (run-with-idle-timer 5 nil 
+  (run-with-idle-timer 5 nil
     (lambda ()
       (org-agenda-to-appt t)
       (advice-add 'appt-check :before
                   (lambda (&rest _)
                     (org-agenda-to-appt t)))))
-  (defun my-appt-notify (time message)
-    "Show desktop notification for APPT reminder."
-    (if (and (fboundp 'notifications-notify)
-             (not (eq system-type 'darwin)))
-        (notifications-notify
-         :title "Org Reminder"
-         :body message
-         :urgency 'low)
-      (org-show-notification message)))
-  (setq appt-disp-window-function #'my-appt-notify))
+  (defun my-appt-notify (_time message)
+    "Show a desktop notification for an org-appt reminder.
+Uses native Windows toast on windows-nt, D-Bus on Linux, and falls
+back to `org-show-notification' everywhere else."
+    (cond
+     ((eq system-type 'windows-nt)
+      (w32-notification-notify :title "Org Reminder" :body message))
+     ((fboundp 'notifications-notify)
+      (notifications-notify :title "Org Reminder" :body message :urgency 'low))
+     (t (org-show-notification message))))
+  (setq appt-disp-window-function #'my-appt-notify)
+
+  :hook
+  (org-mode . abbrev-mode))
 
 ;;;;; org-modern
 (use-package org-modern
@@ -103,11 +102,11 @@
 (use-package denote
   :ensure t
   :config
-  (setq denote-directory (expand-file-name "~/Notes"))
+  ;; joe/notes-dir resolves to d:/Notes on Windows, /mnt/d/Notes in WSL.
+  (setq denote-directory (expand-file-name joe/notes-dir))
   (setq denote-dired-directories
-	(list denote-directory
-	      (thread-last denote-directory (expand-file-name "attachments"))
-	      (expand-file-name "~/Notes")))
+        (list denote-directory
+              (expand-file-name "attachments" denote-directory)))
   (setq denote-infer-keywords nil)
   (setq denote-sort-keywords t)
   (setq denote-prompts '(title keywords))
@@ -134,7 +133,7 @@
   :hook (calendar-mode . denote-journal-calendar-mode)
   :config
   (setq denote-journal-directory
-        (expand-file-name "journal" denote-directory))
+        (expand-file-name "journal" joe/notes-dir))
   (setq denote-journal-keyword "journal")
   (setq denote-journal-title-format 'day-date-month-year))
 

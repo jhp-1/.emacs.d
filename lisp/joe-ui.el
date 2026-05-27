@@ -1,7 +1,10 @@
 ;;; joe-ui.el --- UI-related configuration -*- lexical-binding: t; -*-
 
-;;;; Follow mouse 
-(setq mouse-autoselect-window t)
+;;;; Follow mouse
+;; Focus-follows-mouse conflicts with Windows' own focus system when using
+;; multiple frames; disable it there.
+(when (not (eq system-type 'windows-nt))
+  (setq mouse-autoselect-window t))
 
 ;;;; Cursor
 (setq-default cursor-type 'bar)
@@ -22,66 +25,44 @@
   :init
   (pulsar-global-mode 1))
 
-;;;; Popup frames
-(defun prot-window-delete-popup-frame (&rest _)
-  "Kill selected selected frame if it has parameter `prot-window-popup-frame'.
-Use this function via a hook."
-  (when (frame-parameter nil 'prot-window-popup-frame)
-    (delete-frame)))
+;;;; Frames
+(add-hook 'server-after-make-frame-hook
+          (lambda () (select-frame-set-input-focus (selected-frame))))
+;; (defun prot-window-delete-popup-frame (&rest _)
+;;   "Kill selected selected frame if it has parameter `prot-window-popup-frame'.
+;; Use this function via a hook."
+;;   (when (frame-parameter nil 'prot-window-popup-frame)
+;;     (delete-frame)))
 
-(defmacro prot-window-define-with-popup-frame (command)
-  "Define interactive function which calls COMMAND in a new frame.
-Make the new frame have the `prot-window-popup-frame' parameter."
-  `(defun ,(intern (format "prot-window-popup-%s" command)) ()
-     ,(format "Run `%s' in a popup frame with `prot-window-popup-frame' parameter.
-Also see `prot-window-delete-popup-frame'." command)
-     (interactive)
-     (let ((frame (make-frame '((prot-window-popup-frame . t)))))
-       (select-frame frame)
-       (switch-to-buffer " prot-window-hidden-buffer-for-popup-frame")
-       (condition-case nil
-           (call-interactively ',command)
-         ((quit error user-error)
-          (delete-frame frame))))))
+;; (defmacro prot-window-define-with-popup-frame (command)
+;;   "Define interactive function which calls COMMAND in a new frame.
+;; Make the new frame have the `prot-window-popup-frame' parameter."
+;;   `(defun ,(intern (format "prot-window-popup-%s" command)) ()
+;;      ,(format "Run `%s' in a popup frame with `prot-window-popup-frame' parameter.
+;; Also see `prot-window-delete-popup-frame'." command)
+;;      (interactive)
+;;      (let ((frame (make-frame '((prot-window-popup-frame . t)))))
+;;        (select-frame frame)
+;;        (switch-to-buffer " prot-window-hidden-buffer-for-popup-frame")
+;;        (condition-case nil
+;;            (call-interactively ',command)
+;;          ((quit error user-error)
+;;           (delete-frame frame))))))
 
-(declare-function org-capture "org-capture" (&optional goto keys))
-(defvar org-capture-after-finalize-hook)
+;; (declare-function org-capture "org-capture" (&optional goto keys))
+;; (defvar org-capture-after-finalize-hook)
 
-(prot-window-define-with-popup-frame org-capture)
+;; (prot-window-define-with-popup-frame org-capture)
 
-(add-hook 'org-capture-after-finalize-hook #'prot-window-delete-popup-frame)
+;; (add-hook 'org-capture-after-finalize-hook #'prot-window-delete-popup-frame)
 
-(declare-function tmr "tmr" (time &optional description acknowledgep))
-(defvar tmr-timer-created-functions)
+;; (declare-function tmr "tmr" (time &optional description acknowledgep))
+;; (defvar tmr-timer-created-functions)
 
-;;;###autoload (autoload 'prot-window-popup-tmr "prot-window")
-(prot-window-define-with-popup-frame tmr)
+;; ;;;###autoload (autoload 'prot-window-popup-tmr "prot-window")
+;; (prot-window-define-with-popup-frame tmr)
 
-(add-hook 'tmr-timer-created-functions #'prot-window-delete-popup-frame)
-
-;;;;; Vterm popup frame
-(declare-function vterm "vterm")
-
-;;;###autoload (autoload 'prot-window-popup-vterm "prot-window")
-(defun prot-window-popup-vterm ()
-  "Run `vterm' in a popup frame with `prot-window-popup-frame' parameter."
-  (interactive)
-  (let ((frame (make-frame '((prot-window-popup-frame . t)))))
-    (select-frame frame)
-    (switch-to-buffer " prot-window-hidden-buffer-for-popup-frame")
-    (let ((default-directory "~/"))
-      (condition-case nil
-          (call-interactively 'vterm)
-        ((quit error user-error)
-         (delete-frame frame))))))
-
-(defun prot-window-delete-vterm-popup-frame ()
-  "Delete popup frame when vterm process exits."
-  (when (and (eq major-mode 'vterm-mode)
-             (frame-parameter nil 'prot-window-popup-frame))
-    (delete-frame)))
-
-(add-hook 'vterm-exit-functions #'prot-window-delete-vterm-popup-frame)
+;; (add-hook 'tmr-timer-created-functions #'prot-window-delete-popup-frame)
 
 ;;;; doric-themes
 (use-package doric-themes
@@ -117,6 +98,7 @@ Also see `prot-window-delete-popup-frame'." command)
   :config
   (setq fontaine-presets
         '((regular
+	   :default-family "Aporetic Serif"
            :default-height 120
            :variable-pitch-height 120)
           (large
@@ -130,13 +112,14 @@ Also see `prot-window-delete-popup-frame'." command)
 ;;;; nerd-icons
 (use-package nerd-icons
   :ensure t)
-
+;; nerd-icons-completion is fully configured in joe-completion.el
+;; (marginalia hook + nerd-icons-completion-mode); no duplicate block needed here.
 ;;;; auto-dark-emacs
 (use-package auto-dark
   :ensure t
   :custom
   (custom-safe-themes t) 
-  (auto-dark-themes '((doric-obsidian) (doric-light)))
+  (auto-dark-themes '((doric-obsidian) (doric-oak)))
   (auto-dark-polling-interval-seconds 5)
   :hook
   (auto-dark-dark-mode
