@@ -10,6 +10,7 @@
   (org-cite-insert-processor 'citar)
   (org-cite-follow-processor 'citar)
   (org-cite-activate-processor 'citar)
+  (citar-notes-paths (list joe/notes-dir))
   (citar-library-paths (list (file-name-as-directory (expand-file-name joe/texts-dir))))
   :bind
   ("C-c f o" . citar-open-files)
@@ -69,6 +70,7 @@
   (setq pdf-info-epdfinfo-program "C:/msys64/mingw64/bin/epdfinfo.exe")
   ;; epdfinfo requires unix line endings
   (prefer-coding-system 'utf-8-unix))
+;;;;; pdf-tools
 (use-package pdf-tools
   :ensure t
   :defer t
@@ -94,8 +96,11 @@
                       (frame-parameter nil 'background-color)))
   (setq pdf-view-resize-factor 1.025)
   (setq-default pdf-view-display-size 'fit-height)
-  (setf (alist-get 'underline pdf-annot-default-annotation-properties)
-	'((color . "red")))
+  ;; pdf-annot is loaded lazily inside pdf-tools; guard so the setf
+  ;; doesn't fire before pdf-annot.el has been required.
+  (with-eval-after-load 'pdf-annot
+    (setf (alist-get 'underline pdf-annot-default-annotation-properties)
+	  '((color . "red"))))
   :hook
   (pdf-view-mode . pdf-view-midnight-minor-mode))
 
@@ -196,6 +201,34 @@
     (joe/citar--write-pdf-metadata citekey file)))
 
 (advice-add 'citar-add-file-to-library :after #'joe/citar--update-file-metadata-after-add)
+
+;;;; Reading list
+(defun joe/reading-list--last-name (author-field)
+  "Extract last name of first author from BibTeX AUTHOR-FIELD."
+  (let* ((first (car (split-string author-field " and ")))
+         (clean (joe/citar--clean-bibtex-value first)))
+    (if (string-match "\\`\\([^,]+\\)," clean)
+        (string-trim (match-string 1 clean))
+      (car (last (split-string (string-trim clean)))))))
+
+(defun joe/insert-reading-list-entry ()
+  "Insert a formatted org reading-list heading for a citar entry."
+  (interactive)
+  (let* ((citekey   (citar-select-ref))
+         (author    (or (citar-get-value "author" citekey)
+                        (citar-get-value "editor" citekey)))
+         (year-raw  (or (citar-get-value "year" citekey)
+                        (citar-get-value "date" citekey) ""))
+         (year      (if (string-match "[0-9]\\{4\\}" year-raw)
+                        (match-string 0 year-raw) ""))
+         (title     (joe/citar--clean-bibtex-value
+                     (or (citar-get-value "title" citekey) "")))
+         (publisher (joe/citar--clean-bibtex-value
+                     (or (citar-get-value "publisher" citekey)
+                         (citar-get-value "journal" citekey) "")))
+         (last-name (if author (joe/reading-list--last-name author) "Unknown")))
+    (insert (format "** %s (%s) %s, %s. :: [cite:@%s]\n"
+                    last-name year title publisher citekey))))
 
 ;;;; bibtex
 (use-package bibtex
