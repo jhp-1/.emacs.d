@@ -1,0 +1,22 @@
+# Byte-compiled
+*.elc
+
+# Session/cache files
+auto-save-list/
+bookmarks
+custom.el
+elfeed/
+elpa/
+history
+org-persist/
+package-quickstart.el
+places
+projects
+recentf
+savehist
+saveplace
+server/
+tramp
+transient/
+url/
+.last-package-update-day
