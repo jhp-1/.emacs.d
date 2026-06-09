@@ -64,13 +64,14 @@
 
 ;; (add-hook 'tmr-timer-created-functions #'prot-window-delete-popup-frame)
 
-;;;; doric-themes
-(use-package doric-themes
+;;;; modus-themes
+;; Built into Emacs 29+; :ensure t pulls a newer version from GNU ELPA if available.
+(use-package modus-themes
   :ensure t
   :config
-  (setq doric-themes-to-toggle '(doric-light doric-obsidian))
+  (setq modus-themes-to-toggle '(modus-operandi modus-vivendi))
   :bind
-  ("<f8>" . doric-themes-toggle))
+  ("<f8>" . modus-themes-toggle))
 
 ;;;; Modeline
 (use-package minions
@@ -115,11 +116,13 @@
 ;; nerd-icons-completion is fully configured in joe-completion.el
 ;; (marginalia hook + nerd-icons-completion-mode); no duplicate block needed here.
 ;;;; auto-dark-emacs
+;; Use modus-vivendi (dark) and modus-operandi (light) — both are built into
+;; Emacs 29+ and always available, avoiding theme-not-found errors at startup.
 (use-package auto-dark
   :ensure t
   :custom
-  (custom-safe-themes t) 
-  (auto-dark-themes '((doric-obsidian) (doric-oak)))
+  (custom-safe-themes t)
+  (auto-dark-themes '((modus-vivendi) (modus-operandi)))
   (auto-dark-polling-interval-seconds 5)
   :hook
   (auto-dark-dark-mode
