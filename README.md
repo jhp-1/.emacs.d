@@ -15,7 +15,7 @@ Personal Emacs configuration.
     ├── joe-mail.el       # Notmuch, mu4e, msmtp
     ├── joe-org-notes.el  # Org, Denote, org-ql
     ├── joe-research.el   # Citar, PDF tools, bibliography
-    ├── joe-tools.el      # Magit, rg, shells (PowerShell/eshell), eww, elfeed, pass
+    ├── joe-tools.el      # Magit, rg, shells (PowerShell/eshell), eww, tmr
     └── joe-ui.el         # Themes, modeline, fonts, UI
 ```
 
