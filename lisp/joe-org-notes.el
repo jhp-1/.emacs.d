@@ -70,7 +70,9 @@
   (setq appt-message-warning-time 60)
   (setq appt-display-duration 5)
   (setq appt-display-mode-line nil)
-  (run-with-idle-timer 5 nil
+  ;; Delay the initial agenda scan — scanning d:/Notes at 5 s idle races with
+  ;; other idle timers and causes the org-element C-g suppression messages.
+  (run-with-idle-timer 30 nil
     (lambda ()
       (org-agenda-to-appt t)
       (advice-add 'appt-check :before
@@ -145,15 +147,7 @@ back to `org-show-notification' everywhere else."
   ("C-c n q" . org-ql-search))
 
 ;;;;; citar-denote
-(use-package citar-denote
-  :ensure t
-  :hook
-  (citar-mode . citar-denote-mode)
-  :config
-  (setq citar-denote-keyword "material")
-  (setq citar-denote-use-bib-keywords t)
-  :bind
-  ("C-c f n" . citar-create-note))
+
 
 (provide 'joe-org-notes)
 ;;; joe-org-notes.el ends here
