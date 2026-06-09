@@ -1,6 +1,9 @@
 # Byte-compiled
 *.elc
 
+# Native binaries (pdf-tools / epdfinfo build output)
+pdf-tools-bin/
+
 # Session/cache files
 auto-save-list/
 bookmarks

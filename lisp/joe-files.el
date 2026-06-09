@@ -1,5 +1,5 @@
 ;;; joe-files.el --- Files and buffers configuration -*- lexical-binding: t; -*-
-
+(setq large-file-warning-threshold nil)
 ;;;; Dired
 (use-package dired
   :ensure nil  
