@@ -135,10 +135,18 @@
   (yank nil)
   (org-yank nil))
 
+(defvar joe/last-untitled-buffer nil
+  "The buffer most recently created by `xah-new-empty-buffer'.
+Used to decide whether a new emacsclient frame needs a fresh buffer.")
+
 (defun xah-new-empty-buffer ()
-  "Create a new empty buffer.
+  "Switch to an empty buffer, creating one only when needed.
 Returns the buffer object.
 New buffer is named untitled, untitled<2>, etc.
+
+If the buffer most recently created by this command is still live and
+still empty, switch to it instead of creating another one.  This keeps
+new emacsclient frames from piling up unused untitled buffers.
 
 Warning: new buffer is not prompted for save when killed, see `kill-buffer'.
 Or manually `save-buffer'
@@ -147,11 +155,14 @@ URL `http://xahlee.info/emacs/emacs/emacs_new_empty_buffer.html'
 Created: 2017-11-01
 Version: 2022-04-05"
   (interactive)
-  (let ((xbuf (generate-new-buffer "untitled")))
-    (switch-to-buffer xbuf)
-    (funcall initial-major-mode)
-    xbuf
-    ))
+  (if (and (buffer-live-p joe/last-untitled-buffer)
+           (zerop (buffer-size joe/last-untitled-buffer)))
+      (switch-to-buffer joe/last-untitled-buffer)
+    (let ((xbuf (generate-new-buffer "untitled")))
+      (switch-to-buffer xbuf)
+      (funcall initial-major-mode)
+      (setq joe/last-untitled-buffer xbuf)))
+  joe/last-untitled-buffer)
 
 (setq initial-buffer-choice 'xah-new-empty-buffer)
 (use-package quelpa
