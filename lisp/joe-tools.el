@@ -1,6 +1,12 @@
 ;;; joe-tools.el --- Shells, AI, and external tools configuration -*- lexical-binding: t; -*-
 
 ;;;; rg
+;; wgrep is a required dependency of rg (>= 2.1.10); install it explicitly.
+;; Pure Elisp — works fine on native Windows Emacs.
+(use-package wgrep
+  :ensure t
+  :defer t)
+
 (use-package rg
   :ensure t
   :defer t
@@ -8,6 +14,11 @@
   ("C-c r" . rg-menu))
 
 ;;;; magit
+;; llama is a required dependency of magit-section and magit (>= 1.0).
+;; Pure Elisp — works fine on native Windows Emacs.
+(use-package llama
+  :ensure t)
+
 (use-package magit
   :ensure t
   :defer t
@@ -16,54 +27,17 @@
   :config
   (setq magit-display-buffer-function #'magit-display-buffer-fullframe-status-v1))
 
-;;;; vterm
-(use-package vterm
-  :ensure t
-  :defer t
-  :bind (("C-c s" . vterm)
-         :map vterm-mode-map
-         ("C-q" . vterm-send-next-key)
-         ("C-c C-t" . vterm-copy-mode))
-  :config
-  ;; Speed up scrolling
-  (setq vterm-max-scrollback 10000)
+;;;; PowerShell via comint
+(defun powershell ()
+  "Open a PowerShell buffer."
+  (interactive)
+  (let ((buf (get-buffer-create "*powershell*")))
+    (pop-to-buffer buf)
+    (unless (comint-check-proc buf)
+      (make-comint-in-buffer "powershell" buf "powershell.exe" nil "-NoLogo")
+      (shell-mode))))
 
-  ;; Kill buffer when vterm process exits
-  (setq vterm-kill-buffer-on-exit t)
-
-  ;; Better buffer names
-  (setq vterm-buffer-name-string "vterm %s")
-
-  ;; Use full window width
-  (setq vterm-min-window-width 80)
-
-  ;; Enable bracketed paste
-  (setq vterm-enable-manipulate-selection-data-by-osc52 t)
-
-  ;; Better integration with Emacs kill ring
-  (setq vterm-copy-exclude-prompt t)
-
-  ;; Open new vterm in current directory
-  (defun vterm-here ()
-    "Open vterm in the current buffer's directory."
-    (interactive)
-    (let ((default-directory default-directory))
-      (vterm)))
-
-  ;; Quick switch between multiple vterms
-  (defun vterm-toggle ()
-    "Toggle between vterm and previous buffer."
-    (interactive)
-    (if (eq major-mode 'vterm-mode)
-        (switch-to-buffer (other-buffer))
-      (if-let* ((vterm-buf (seq-find (lambda (buf)
-                                      (with-current-buffer buf
-                                        (eq major-mode 'vterm-mode)))
-                                    (buffer-list))))
-          (switch-to-buffer vterm-buf)
-        (vterm))))
-
-  :bind ("C-c S" . vterm-toggle))
+(global-set-key (kbd "C-c s") #'powershell)
 
 ;;;;; eshell
 (defun eshell-at-home ()
@@ -80,43 +54,11 @@
 (use-package eshell
   :ensure nil)
 
-;;;; gptel
-(use-package gptel
-  :ensure t
-  :defer t
-  :bind
-  ("C-c i" . gptel)
-  :config
-  ;; OpenRouter backend (free DeepSeek as default)
-  (gptel-make-openai "OpenRouter"
-    :host "openrouter.ai"
-    :endpoint "/api/v1/chat/completions"
-    :stream t
-    :key (lambda () (getenv "OPENROUTER_API_KEY"))
-    :models '(deepseek/deepseek-r1:free
-              openai/gpt-4o
-              google/gemini-2.0-flash-001))
-
-  ;; Anthropic / Claude backend — uses ANTHROPIC_API_KEY from environment.
-  (gptel-make-anthropic "Claude"
-    :stream t
-    :key (lambda () (getenv "ANTHROPIC_API_KEY"))
-    :models '(claude-sonnet-4-6
-              claude-opus-4-7
-              claude-haiku-4-5-20251001))
-
-  ;; Default to Claude Sonnet; fall back to OpenRouter if no key is set.
-  (setq gptel-backend
-        (if (and (getenv "ANTHROPIC_API_KEY")
-                 (not (string-empty-p (getenv "ANTHROPIC_API_KEY"))))
-            (alist-get "Claude" gptel--backends nil nil #'equal)
-          (alist-get "OpenRouter" gptel--backends nil nil #'equal)))
-  (setq gptel-model 'claude-sonnet-4-6)
-  (setq gptel-default-mode 'markdown-mode))
-
 ;;;; eww
 (use-package eww
   :ensure nil
+  :init
+  (setq browse-url-browser-function #'eww-browse-url)
   :config
   (setq eww-search-prefix "https://duckduckgo.com/html/?q=")
   (setq eww-download-directory "~/Downloads/")
@@ -128,7 +70,7 @@
 ;;;; Windows-only: explicit PATH and exec-path additions
 ;; On Windows, exec-path-from-shell is not used (it requires a POSIX shell).
 ;; C:/Users/Joe/bin contains .cmd wrappers that bridge to WSL tools
-;; (notmuch.cmd, mbsync.cmd, msmtp.cmd, claude-code-acp.cmd, etc.).
+;; (notmuch.cmd, mbsync.cmd, msmtp.cmd, etc.).
 (when (eq system-type 'windows-nt)
   (setenv "HOME" "C:/Users/Joe")
   (dolist (p '("C:/Program Files/Git/usr/bin"
@@ -142,71 +84,6 @@
   (setq w32-pipe-read-delay 0)
   (setq w32-pipe-buffer-size (* 64 1024))
   (setq process-adaptive-read-buffering nil))
-
-;;;; agent-shell / ACP / Claude Code via OpenRouter / Goose
-
-(use-package shell-maker
-  :vc (:url "https://github.com/xenodium/shell-maker"))
-
-(use-package acp
-  :vc (:url "https://github.com/xenodium/acp.el"))
-
-;; exec-path-from-shell: only active on Linux/macOS GUI Emacs.
-;; On Windows, exec-path-from-shell cannot call a POSIX shell (printf is missing
-;; from cmd.exe/cmdproxy.exe) and will error.  Environment vars on Windows are
-;; set at the OS level and inherited by the Emacs daemon at login.
-(use-package exec-path-from-shell
-  :if (memq system-type '(gnu gnu/linux gnu/kfreebsd darwin))
-  :ensure t
-  :init
-  (setq exec-path-from-shell-arguments '("-l"))
-  ;; Pin to bash so this works regardless of the user's default WSL shell.
-  (setq exec-path-from-shell-shell-name "/bin/bash")
-  :config
-  ;; fish is supported directly
-  (dolist (var '("PATH"
-                 "OPENROUTER_API_KEY"
-                 "ANTHROPIC_BASE_URL"
-                 "ANTHROPIC_AUTH_TOKEN"
-                 "ANTHROPIC_API_KEY"
-                 "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"
-                 "DISABLE_PROMPT_CACHING"
-                 "CLAUDE_CODE_MAX_OUTPUT_TOKENS"))
-    (exec-path-from-shell-copy-env var)))
-
-(use-package agent-shell
-  :vc (:url "https://github.com/xenodium/agent-shell")
-  ;; exec-path-from-shell is not loaded on Windows (guarded by :if above),
-  ;; so it cannot be listed as an :after dependency here.
-  :after (shell-maker acp)
-  :commands
-  (agent-shell-goose-start-agent
-   agent-shell-anthropic-start-claude-code)
-  :bind
-  (("C-c C-q" . agent-shell-goose-start-agent)
-   ("C-c C-a" . agent-shell-anthropic-start-claude-code))
-  :config
-  (setq agent-shell-goose-authentication
-        (agent-shell-make-goose-authentication :none t))
-
-  ;; On Windows, claude-code-acp lives inside WSL, so we call it via wsl.exe.
-  ;; On Linux/macOS the binary is on PATH directly.
-  (setq agent-shell-anthropic-claude-acp-command
-        (if (eq system-type 'windows-nt)
-            '("wsl" "claude-code-acp")
-          '("claude-code-acp")))
-
-  (setq agent-shell-anthropic-claude-command nil)
-
-  (setq agent-shell-anthropic-authentication
-        (agent-shell-anthropic-make-authentication
-         :api-key (lambda () "")))
-
-  ;; On Windows, OPENROUTER_API_KEY / ANTHROPIC_BASE_URL / ANTHROPIC_API_KEY
-  ;; must be set as Windows user environment variables.
-  (setq agent-shell-anthropic-claude-environment
-        (agent-shell-make-environment-variables
-         :inherit-env t)))
 
 ;;;; pass
 (use-package pass
