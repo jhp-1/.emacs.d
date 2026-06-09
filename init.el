@@ -27,12 +27,15 @@
 
 ;; Essential modules loaded immediately (needed for basic functionality)
 (require 'joe-core)
-(require 'joe-org-notes)
 (require 'joe-completion)
-(require 'joe-research)
 
-;; Defer heavy modules until after startup
-;; Defer these until idle time
+;; Org and bibliography are heavy on Windows (bib file read, org-element init,
+;; AV scanning) — defer them to just after startup so the daemon is ready fast.
+(run-with-idle-timer 0.1 nil
+                     (lambda ()
+                       (require 'joe-org-notes)
+                       (require 'joe-research)))
+
 (run-with-idle-timer 0.5 nil
                      (lambda ()
                        (require 'joe-ui)
