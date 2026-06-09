@@ -85,32 +85,6 @@
   (setq w32-pipe-buffer-size (* 64 1024))
   (setq process-adaptive-read-buffering nil))
 
-;;;; pass
-(use-package pass
-  :ensure t
-  :bind
-  ("C-c p p" . pass)
-  ("C-c p i" . pass-insert)
-  ("C-c p g" . pass-generate))
-
-;;;; elfeed
-(use-package elfeed
-  :ensure t
-  :bind
-  ("C-c e" . elfeed)
-  :config
-  (setq-default elfeed-search-filter "@6-months-ago ")
-  (setq elfeed-use-curl t)
-  (setq elfeed-curl-max-connections 10)
-  (setq elfeed-curl-timeout 10))
-
-(use-package elfeed-org
-  :after elfeed
-  :ensure t
-  :config
-  (elfeed-org)
-  (setq rmh-elfeed-org-files (list "~/.elfeed/elfeed.org")))
-
 ;;;; tmr
 (use-package tmr
   :ensure t
