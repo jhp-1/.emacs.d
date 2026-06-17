@@ -165,10 +165,6 @@ Version: 2022-04-05"
   joe/last-untitled-buffer)
 
 (setq initial-buffer-choice 'xah-new-empty-buffer)
-(use-package quelpa
-  :ensure t)
-(use-package quelpa-use-package
-  :ensure t)
 
 ;;;; helpful
 (use-package helpful
@@ -190,10 +186,6 @@ Version: 2022-04-05"
   (setq aw-background nil)
   (setq aw-leading-char-style 'char)
   (setq aw-dispatch-always t))
-
-;;;; centered-cursor-mode
-(use-package centered-cursor-mode
-  :ensure t)
 
 (provide 'joe-core)
 ;;; joe-core.el ends here

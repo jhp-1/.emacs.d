@@ -13,14 +13,6 @@
   (add-to-list 'jinx-exclude-regexps '("~.*?~"))     ; Don't check spell in verbatim
   (add-to-list 'jinx-exclude-regexps '("=.*?=")))    ; Don't check spell in code
 
-;;;; outline
-(use-package outline
-  :ensure nil
-  :bind
-  (:map outline-mode-map
-        ("C-c C-n" . outline-next-visible-heading)
-        ("C-c C-p" . outline-previous-visible-heading)))
-
 ;;;; Org
 (use-package org
   :bind
@@ -57,7 +49,7 @@
 
           ("j" "Denote journal entry for TODAY" plain
            (file denote-last-path)
-           #'denote-journal-extras-new-or-existing-entry
+           #'denote-journal-new-or-existing-entry
            :no-save t
            :immediate-finish nil
            :kill-buffer t

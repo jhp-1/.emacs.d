@@ -55,7 +55,7 @@
 
 ;;;;; ibuffer
 (use-package ibuffer
-  :ensure t
+  :ensure nil
   :bind
   ("C-x C-b" . ibuffer))
 

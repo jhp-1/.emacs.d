@@ -10,7 +10,7 @@
 ;; Emacs Wayland improvements for better window management
 (setq frame-resize-pixelwise t)
 (setq window-resize-pixelwise t)
-(setq frame-inhibit-implied-resize t)
+;; frame-inhibit-implied-resize is set in early-init.el
 (when (eq window-system 'x)
   ;; Improve window movement and resizing on Wayland
   (setq x-gtk-resize-child-frames 'resize-mode)

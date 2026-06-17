@@ -106,9 +106,8 @@
    ("M-r" . consult-history))              
   :config
   (setq consult-preview-key nil)
-  (with-eval-after-load 'consult
-    (setq consult-buffer-sources
-          (delq 'consult--source-bookmark consult-buffer-sources))))
+  (setq consult-buffer-sources
+        (delq 'consult--source-bookmark consult-buffer-sources)))
 
 ;;;; consult-denote
 (use-package consult-denote

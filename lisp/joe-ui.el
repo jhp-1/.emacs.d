@@ -28,41 +28,6 @@
 ;;;; Frames
 (add-hook 'server-after-make-frame-hook
           (lambda () (select-frame-set-input-focus (selected-frame))))
-;; (defun prot-window-delete-popup-frame (&rest _)
-;;   "Kill selected selected frame if it has parameter `prot-window-popup-frame'.
-;; Use this function via a hook."
-;;   (when (frame-parameter nil 'prot-window-popup-frame)
-;;     (delete-frame)))
-
-;; (defmacro prot-window-define-with-popup-frame (command)
-;;   "Define interactive function which calls COMMAND in a new frame.
-;; Make the new frame have the `prot-window-popup-frame' parameter."
-;;   `(defun ,(intern (format "prot-window-popup-%s" command)) ()
-;;      ,(format "Run `%s' in a popup frame with `prot-window-popup-frame' parameter.
-;; Also see `prot-window-delete-popup-frame'." command)
-;;      (interactive)
-;;      (let ((frame (make-frame '((prot-window-popup-frame . t)))))
-;;        (select-frame frame)
-;;        (switch-to-buffer " prot-window-hidden-buffer-for-popup-frame")
-;;        (condition-case nil
-;;            (call-interactively ',command)
-;;          ((quit error user-error)
-;;           (delete-frame frame))))))
-
-;; (declare-function org-capture "org-capture" (&optional goto keys))
-;; (defvar org-capture-after-finalize-hook)
-
-;; (prot-window-define-with-popup-frame org-capture)
-
-;; (add-hook 'org-capture-after-finalize-hook #'prot-window-delete-popup-frame)
-
-;; (declare-function tmr "tmr" (time &optional description acknowledgep))
-;; (defvar tmr-timer-created-functions)
-
-;; ;;;###autoload (autoload 'prot-window-popup-tmr "prot-window")
-;; (prot-window-define-with-popup-frame tmr)
-
-;; (add-hook 'tmr-timer-created-functions #'prot-window-delete-popup-frame)
 
 ;;;; modus-themes
 ;; Built into Emacs 29+; :ensure t pulls a newer version from GNU ELPA if available.
@@ -149,7 +114,10 @@
   :hook
   (outline-mode . reveal-mode)
   :bind
-  ("C-<tab>" . outline-cycle))
+  (("C-<tab>" . outline-cycle)
+   :map outline-mode-map
+   ("C-c C-n" . outline-next-visible-heading)
+   ("C-c C-p" . outline-previous-visible-heading)))
 
 (defun joe/my-outline-hide-all ()
   "Hide all but the top-level headings in `outline-minor-mode`."
@@ -168,7 +136,7 @@
 (add-hook 'emacs-lisp-mode-hook 'outline-minor-mode)
 
 ;;;;; electric-pair-mode
-(setq electric-pair-mode t)
+(electric-pair-mode 1)
 
 (provide 'joe-ui)
 ;;; joe-ui.el ends here
