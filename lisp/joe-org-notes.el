@@ -65,31 +65,6 @@
   (setq org-todo-keywords
         '((sequence "TODO(t)" "CANCEL(c!)" "DONE(d!)")))
 
-  ;;;;; Notifications for org-agenda events (merged here from second use-package org block)
-  (appt-activate nil)
-  (setq appt-message-warning-time 60)
-  (setq appt-display-duration 5)
-  (setq appt-display-mode-line nil)
-  ;; Delay the initial agenda scan — scanning d:/Notes at 5 s idle races with
-  ;; other idle timers and causes the org-element C-g suppression messages.
-  (run-with-idle-timer 30 nil
-    (lambda ()
-      (org-agenda-to-appt t)
-      (advice-add 'appt-check :before
-                  (lambda (&rest _)
-                    (org-agenda-to-appt t)))))
-  (defun my-appt-notify (_time message)
-    "Show a desktop notification for an org-appt reminder.
-Uses native Windows toast on windows-nt, D-Bus on Linux, and falls
-back to `org-show-notification' everywhere else."
-    (cond
-     ((eq system-type 'windows-nt)
-      (w32-notification-notify :title "Org Reminder" :body message))
-     ((fboundp 'notifications-notify)
-      (notifications-notify :title "Org Reminder" :body message :urgency 'low))
-     (t (org-show-notification message))))
-  (setq appt-disp-window-function #'my-appt-notify)
-
   :hook
   (org-mode . abbrev-mode))
 
