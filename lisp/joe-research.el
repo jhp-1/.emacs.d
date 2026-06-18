@@ -71,9 +71,84 @@
   (zotra-server-path "http://127.0.0.1:1969")
   (zotra-default-bibliography (list (expand-file-name "My Library.bib" joe/texts-dir)))
   (zotra-default-entry-format "bibtex")
-  (zotra-use-curl nil)
-  (zotra-default-entry-fields
-   '(author title journal year volume number pages doi url abstract)))
+  (zotra-use-curl nil))
+
+;;;; Controlled keyword vocabulary
+;; Subject keywords are a fixed, hand-owned list so the bib stays a useful
+;; controlled vocabulary instead of the LCSH/BISAC shrapnel sources hand back.
+;; Edit this list to taste — it is the single source of truth.
+(defconst joe/bib-keywords
+  '("Philosophy" "Metaphysics" "Epistemology" "Logic" "Ethics" "Aesthetics"
+    "Political Philosophy" "Phenomenology" "Existentialism" "Critical Theory"
+    "Philosophy of Science" "Philosophy of Language" "Media Studies"
+    "History" "Intellectual History" "Religion" "Theology"
+    "Literature" "Literary Criticism" "Linguistics" "Sociology" "Psychology"
+    "Anthropology" "Science" "Mathematics" "Economics" "Politics" "Art" "Film")
+  "Controlled vocabulary for the bibliography `keywords' field.")
+
+(defun joe/bib-strip-keywords ()
+  "Delete the keywords field from the bibtex entry at point.
+On `zotra-after-get-bibtex-entry-hook' so imported entries never carry
+source-supplied keywords into the controlled vocabulary."
+  (save-excursion
+    (bibtex-beginning-of-entry)
+    (let ((end (save-excursion (bibtex-end-of-entry) (point))))
+      (when (re-search-forward "^[ \t]*keywords[ \t]*=[ \t]*" end t)
+        (let ((start (match-beginning 0)))
+          (if (looking-at "[{\"]") (forward-sexp) (end-of-line))
+          (when (looking-at "[ \t]*,") (goto-char (match-end 0)))
+          (when (looking-at "[ \t]*\n") (goto-char (match-end 0)))
+          (delete-region start (point)))))))
+
+(with-eval-after-load 'zotra
+  ;; append so it runs after `bibtex-clean-entry' has normalised the entry
+  (add-hook 'zotra-after-get-bibtex-entry-hook #'joe/bib-strip-keywords t))
+
+(defun joe/bib-set-keywords ()
+  "Set the keywords of the bibtex entry at point from `joe/bib-keywords'.
+Pre-fills with the entry's current in-vocabulary keywords."
+  (interactive)
+  (bibtex-beginning-of-entry)
+  (let* ((current (ignore-errors (bibtex-text-in-field "keywords")))
+         (initial (when current
+                    (seq-filter (lambda (k) (member k joe/bib-keywords))
+                                (mapcar #'string-trim (split-string current ",")))))
+         (chosen (completing-read-multiple
+                  "Keywords: " joe/bib-keywords nil t
+                  (when initial (concat (string-join initial ",") ",")))))
+    (bibtex-beginning-of-entry)
+    (bibtex-set-field "keywords" (string-join chosen ", "))))
+
+(defun joe/bib-audit-keywords ()
+  "Report keywords in the bib file that are not in `joe/bib-keywords'."
+  (interactive)
+  (let ((bib (joe/--bib-file))
+        (bad (make-hash-table :test #'equal)))
+    (with-temp-buffer
+      (insert-file-contents bib)
+      (goto-char (point-min))
+      (while (re-search-forward
+              "^[ \t]*keywords[ \t]*=[ \t]*[{\"]\\([^}\"]*\\)[\"}]" nil t)
+        (dolist (kw (mapcar #'string-trim (split-string (match-string 1) ",")))
+          (unless (or (string-empty-p kw) (member kw joe/bib-keywords))
+            (puthash kw (1+ (gethash kw bad 0)) bad)))))
+    (if (zerop (hash-table-count bad))
+        (message "All bib keywords are in the controlled vocabulary.")
+      (let ((rows nil)
+            (buf (get-buffer-create "*bib-keyword-audit*")))
+        (maphash (lambda (k v) (push (cons k v) rows)) bad)
+        (setq rows (sort rows (lambda (a b) (> (cdr a) (cdr b)))))
+        (with-current-buffer buf
+          (let ((inhibit-read-only t))
+            (erase-buffer)
+            (insert (format "%d off-vocabulary keyword(s):\n\n" (length rows)))
+            (dolist (r rows) (insert (format "%5d  %s\n" (cdr r) (car r))))
+            (goto-char (point-min))
+            (special-mode)))
+        (display-buffer buf)))))
+
+(keymap-global-set "C-c f t" #'joe/bib-set-keywords)
+(keymap-global-set "C-c f k" #'joe/bib-audit-keywords)
 
 (when (eq system-type 'windows-nt)
   ;; MinGW64 DLLs must come before Git for Windows
