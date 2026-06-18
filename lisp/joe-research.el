@@ -104,12 +104,28 @@ source-supplied keywords into the controlled vocabulary."
   ;; append so it runs after `bibtex-clean-entry' has normalised the entry
   (add-hook 'zotra-after-get-bibtex-entry-hook #'joe/bib-strip-keywords t))
 
+(defun joe/--write-pdf-keywords (file keywords)
+  "Write KEYWORDS (a list of strings) to FILE's metadata via exiftool.
+Replaces any existing Keywords/Subject; an empty list clears them.
+`-sep' makes exiftool store them as a proper multi-valued list."
+  (when (executable-find "exiftool")
+    (let ((val (string-join keywords ", ")))
+      (ignore-errors
+        (call-process "exiftool" nil nil nil
+                      "-overwrite_original_in_place"
+                      "-sep" ", "
+                      (concat "-Keywords=" val)
+                      (concat "-Subject=" val)
+                      (joe/--native-path file))))))
+
 (defun joe/bib-set-keywords ()
   "Set the keywords of the bibtex entry at point from `joe/bib-keywords'.
-Pre-fills with the entry's current in-vocabulary keywords."
+Also mirror them into the linked PDF's metadata.  Pre-fills with the
+entry's current in-vocabulary keywords."
   (interactive)
   (bibtex-beginning-of-entry)
-  (let* ((current (ignore-errors (bibtex-text-in-field "keywords")))
+  (let* ((citekey (ignore-errors (bibtex-key-in-head)))
+         (current (ignore-errors (bibtex-text-in-field "keywords")))
          (initial (when current
                     (seq-filter (lambda (k) (member k joe/bib-keywords))
                                 (mapcar #'string-trim (split-string current ",")))))
@@ -117,7 +133,15 @@ Pre-fills with the entry's current in-vocabulary keywords."
                   "Keywords: " joe/bib-keywords nil t
                   (when initial (concat (string-join initial ",") ",")))))
     (bibtex-beginning-of-entry)
-    (bibtex-set-field "keywords" (string-join chosen ", "))))
+    (bibtex-set-field "keywords" (string-join chosen ", "))
+    (when citekey
+      ;; match citar's own resolution: `file' field links + <citekey>.pdf
+      (dolist (pdf (seq-filter
+                    (lambda (f) (string-match-p "\\.pdf\\'" (downcase f)))
+                    (delete-dups
+                     (append (ignore-errors (gethash citekey (citar-get-files citekey)))
+                             (joe/citar--files-by-citekey citekey)))))
+        (joe/--write-pdf-keywords pdf chosen)))))
 
 (defun joe/bib-audit-keywords ()
   "Report keywords in the bib file that are not in `joe/bib-keywords'."
@@ -230,6 +254,8 @@ Pre-fills with the entry's current in-vocabulary keywords."
       (apply #'call-process "exiftool" nil nil nil
              (append
               (list "-overwrite_original_in_place"
+                    ;; drop any source-supplied keyword junk on import
+                    "-Keywords=" "-Subject="
                     (format "-Title=%s" title)
                     (format "-Author=%s" (or author "")))
               (when year (list (format "-XMP-dc:date=%s" year)))
@@ -776,6 +802,8 @@ does not land on the entry when point starts before it on a blank line."
         (apply #'call-process "exiftool" nil nil nil
                (append
                 (list "-overwrite_original_in_place"
+                      ;; drop any source-supplied keyword junk on import
+                      "-Keywords=" "-Subject="
                       (format "-Title=%s" title)
                       (format "-Author=%s" (or author "")))
                 (when year (list (format "-XMP-dc:date=%s" year)))
