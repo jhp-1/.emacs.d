@@ -74,18 +74,64 @@
   (zotra-use-curl nil))
 
 ;;;; Controlled keyword vocabulary
-;; Subject keywords are a fixed, hand-owned list so the bib stays a useful
-;; controlled vocabulary instead of the LCSH/BISAC shrapnel sources hand back.
-;; Edit this list to taste — it is the single source of truth.
+;; A small, hand-owned, lower-case vocabulary, after Karl Voit's tagging rules
+;; (few; self-defined; non-overlapping; general; lower-case; one language;
+;; explained) tempered by library science (literary warrant: tags earn their
+;; place from what is actually in the collection).  Single source of truth for
+;; the bibliography `keywords' field.  Two facets — subject and era — plus the
+;; one figure whose warrant is overwhelming.  Drop `philosophy' itself: it is
+;; the whole library, so it tags nothing.  Subject tags are mass nouns, hence
+;; singular (Voit's "plural" rule targets count nouns, which these are not).
+;;
+;; Tag dictionary (Voit rule 10 — explain your tags):
+;;   metaphysics   being, ontology, time, modality, causation, persistence
+;;   epistemology  knowledge, justification, skepticism
+;;   logic         formal & philosophical logic, set theory, foundations
+;;   ethics        moral philosophy, value, the good life
+;;   aesthetics    philosophy of art & beauty; art/music theory
+;;   mind          philosophy of mind, consciousness, cognition
+;;   language      philosophy of language, linguistics, semiotics
+;;   science       philosophy & history of science
+;;   mathematics   philosophy of mathematics + mathematics proper
+;;   computing     CS, programming, algorithms, cybernetics, information,
+;;                 computing history, philosophy of information/technology
+;;   media         media theory, film/cinema, communication
+;;   politics      political philosophy & theory, sovereignty, the state
+;;   economics     political economy, money, finance, world-systems
+;;   religion      theology, philosophy of religion, scripture
+;;   esotericism   alchemy, magic, hermeticism, rosicrucianism, astrology,
+;;                 kabbalah, occult
+;;   history       historiography & history proper (NOT history-of-philosophy);
+;;                 also absorbs intelligence/deep-politics/conspiracy material
+;;   literature    literary works, criticism, poetry
+;;   anthropology  ethnology, myth, ritual, kinship
+;;   sociology     social theory, society, institutions
+;;   psychology    empirical/historical psychology, psychoanalysis
+;;   -- era: the historical period a work's SUBJECT belongs to or concerns.
+;;      Tag only when a period is genuinely the object; omit for perennial
+;;      philosophy, technical works, and studies of 20th-c.+ figures.  A study
+;;      of a pre-1900 figure takes that figure's era.  Non-overlapping: --
+;;   ancient       antiquity, to ~500
+;;   medieval      ~500–1400
+;;   renaissance   ~1400–1600
+;;   early-modern  ~1600–1800 (scientific revolution, Enlightenment)
+;;   modern        the long 19th century, ~1800–1900
+;;   contemporary  a present-day phenomenon/condition is the subject (mass
+;;                 media, current politics) — NOT mere recent authorship
+;;   -- figure (only where the focus dominates the collection) --
+;;   kant          Kant & Kantianism (scholarship on, not merely by)
 (defconst joe/bib-keywords
-  '("Philosophy" "Metaphysics" "Epistemology" "Logic" "Ethics" "Aesthetics"
-    "Political Philosophy" "Phenomenology" "Critical Theory"
-    "Philosophy of Science" "Philosophy of Language" "Media Studies"
-    "History" "Intellectual History" "Religion" "Theology"
-    "Literature" "Literary Criticism" "Linguistics" "Sociology" "Psychology"
-    "Anthropology" "Science" "Mathematics" "Economics" "Politics" "Art" "Film"
-    "Marx" "Kant" "Early Modern")
-  "Controlled vocabulary for the bibliography `keywords' field.")
+  '(;; subject
+    "metaphysics" "epistemology" "logic" "ethics" "aesthetics" "mind"
+    "language" "science" "mathematics" "computing" "media" "politics"
+    "economics" "religion" "esotericism" "history" "literature"
+    "anthropology" "sociology" "psychology"
+    ;; era
+    "ancient" "medieval" "renaissance" "early-modern" "modern" "contemporary"
+    ;; figure
+    "kant")
+  "Controlled vocabulary for the bibliography `keywords' field.
+See the tag dictionary in the comment above this definition.")
 
 (defun joe/bib-strip-keywords ()
   "Delete the keywords field from the bibtex entry at point.
