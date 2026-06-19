@@ -79,11 +79,12 @@
 ;; Edit this list to taste — it is the single source of truth.
 (defconst joe/bib-keywords
   '("Philosophy" "Metaphysics" "Epistemology" "Logic" "Ethics" "Aesthetics"
-    "Political Philosophy" "Phenomenology" "Existentialism" "Critical Theory"
+    "Political Philosophy" "Phenomenology" "Critical Theory"
     "Philosophy of Science" "Philosophy of Language" "Media Studies"
     "History" "Intellectual History" "Religion" "Theology"
     "Literature" "Literary Criticism" "Linguistics" "Sociology" "Psychology"
-    "Anthropology" "Science" "Mathematics" "Economics" "Politics" "Art" "Film")
+    "Anthropology" "Science" "Mathematics" "Economics" "Politics" "Art" "Film"
+    "Marx" "Kant" "Early Modern")
   "Controlled vocabulary for the bibliography `keywords' field.")
 
 (defun joe/bib-strip-keywords ()
@@ -118,6 +119,23 @@ Replaces any existing Keywords/Subject; an empty list clears them.
                       (concat "-Subject=" val)
                       (joe/--native-path file))))))
 
+(defun joe/--bib-set-keywords-field (value)
+  "Set the keywords field of the bibtex entry at point to VALUE (a string).
+Replaces an existing keywords field or inserts one; self-contained since
+bibtex.el has no `bibtex-set-field'."
+  (save-excursion
+    (bibtex-beginning-of-entry)
+    (let ((end (save-excursion (bibtex-end-of-entry) (point))))
+      (if (re-search-forward "^[ \t]*keywords[ \t]*=[ \t]*" end t)
+          (let ((vstart (point)))
+            (if (looking-at "[{\"]") (forward-sexp) (end-of-line))
+            (delete-region vstart (point))
+            (goto-char vstart)
+            (insert "{" value "}"))
+        (bibtex-beginning-of-entry)
+        (end-of-line)
+        (insert "\n  keywords = {" value "},")))))
+
 (defun joe/bib-set-keywords ()
   "Set the keywords of the bibtex entry at point from `joe/bib-keywords'.
 Also mirror them into the linked PDF's metadata.  Pre-fills with the
@@ -132,8 +150,7 @@ entry's current in-vocabulary keywords."
          (chosen (completing-read-multiple
                   "Keywords: " joe/bib-keywords nil t
                   (when initial (concat (string-join initial ",") ",")))))
-    (bibtex-beginning-of-entry)
-    (bibtex-set-field "keywords" (string-join chosen ", "))
+    (joe/--bib-set-keywords-field (string-join chosen ", "))
     (when citekey
       ;; match citar's own resolution: `file' field links + <citekey>.pdf
       (dolist (pdf (seq-filter
