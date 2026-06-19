@@ -83,6 +83,7 @@
 ;;;; auto-dark-emacs
 ;; Use modus-vivendi (dark) and modus-operandi (light) — both are built into
 ;; Emacs 29+ and always available, avoiding theme-not-found errors at startup.
+;; joe--sync-pdf-midnight-colors is defined in joe-core.el.
 (use-package auto-dark
   :ensure t
   :custom
@@ -90,16 +91,7 @@
   (auto-dark-themes '((modus-vivendi) (modus-operandi)))
   (auto-dark-polling-interval-seconds 5)
   :hook
-  (auto-dark-dark-mode
-   . (lambda ()
-       (setq-default pdf-view-midnight-colors
-		     (cons (frame-parameter nil 'foreground-color)
-			   (frame-parameter nil 'background-color)))))
-  (auto-dark-light-mode
-   . (lambda ()
-       (setq-default pdf-view-midnight-colors
-		     (cons (frame-parameter nil 'foreground-color)
-			   (frame-parameter nil 'background-color)))))
+  ((auto-dark-dark-mode auto-dark-light-mode) . joe--sync-pdf-midnight-colors)
   :init (auto-dark-mode))
 
 ;;;; ultra-scroll

@@ -32,6 +32,18 @@
   (setq auto-package-update-delete-old-versions t)
   (setq auto-package-update-interval 7))
 
+;;;; pdf-view midnight colors
+;; Shared by joe-ui.el (auto-dark theme switches) and joe-research.el (pdf open).
+(defun joe--sync-pdf-midnight-colors (&rest _)
+  "Match `pdf-view-midnight-colors' to the current frame's `default' face.
+Reads the `default' face rather than frame parameters, which return the
+`unspecified-fg'/`unspecified-bg' symbols (not colors) on the daemon's
+initial non-graphical frame.  Skips the update unless both are real colors."
+  (let ((fg (face-attribute 'default :foreground))
+        (bg (face-attribute 'default :background)))
+    (when (and (stringp fg) (stringp bg))
+      (setq-default pdf-view-midnight-colors (cons fg bg)))))
+
 ;;;; Cross-platform path constants
 ;; Used by joe-org-notes.el, joe-research.el etc. so they don't hardcode drive letters.
 (defconst joe/notes-dir

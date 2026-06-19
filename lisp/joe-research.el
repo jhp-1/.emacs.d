@@ -265,9 +265,6 @@ entry's current in-vocabulary keywords."
 
   :config
   (pdf-tools-install :no-query)
-  (setq-default pdf-view-midnight-colors                    
-		(cons (frame-parameter nil 'foreground-color)    
-                      (frame-parameter nil 'background-color)))
   (setq pdf-view-resize-factor 1.025)
   (setq-default pdf-view-display-size 'fit-height)
   ;; pdf-annot is loaded lazily inside pdf-tools; guard so the setf
@@ -276,7 +273,11 @@ entry's current in-vocabulary keywords."
     (setf (alist-get 'underline pdf-annot-default-annotation-properties)
 	  '((color . "red"))))
   :hook
-  (pdf-view-mode . pdf-view-midnight-minor-mode))
+  ;; Sync colors to this frame's theme *before* enabling midnight mode, so the
+  ;; daemon's colorless initial frame never feeds it `unspecified-fg'.
+  (pdf-view-mode . (lambda ()
+                     (joe--sync-pdf-midnight-colors)
+                     (pdf-view-midnight-minor-mode))))
 
 (use-package saveplace-pdf-view
   :ensure t
