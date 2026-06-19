@@ -12,7 +12,7 @@
   (setq dired-recursive-copies 'always
         dired-recursive-deletes 'always
         delete-by-moving-to-trash t
-        dired-listing-switches "-lav --group-directories-first -h"
+        dired-listing-switches "-lv --group-directories-first -h"
         dired-dwim-target t
         dired-auto-revert-buffer #'dired-directory-changed-p
         wdired-allow-to-change-permissions t
