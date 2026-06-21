@@ -1,8 +1,19 @@
 ;;; joe-files.el --- Files and buffers configuration -*- lexical-binding: t; -*-
 (setq large-file-warning-threshold nil)
 ;;;; Dired
+(defun joe/dired-toggle-dotfiles ()
+  "Toggle showing dotfiles in the current Dired buffer (default: hidden).
+Hiding is just the absence of ls's -a flag, so flip it and re-list."
+  (interactive)
+  (dired-sort-other
+   (if (string-prefix-p "-a " dired-actual-switches)
+       (substring dired-actual-switches 3)
+     (concat "-a " dired-actual-switches))))
+
 (use-package dired
-  :ensure nil  
+  :ensure nil
+  :bind (:map dired-mode-map
+              ("C-c ." . joe/dired-toggle-dotfiles))
   :hook
   ((dired-mode . dired-hide-details-mode)
    (dired-mode . hl-line-mode)
@@ -71,7 +82,9 @@
 
 ;;;; General Dired optimizations
 ;; dired-listing-switches is set canonically in the dired use-package block above
-;; ("-lav --group-directories-first -h"); do not duplicate it here.
+;; ("-lv --group-directories-first -h" — no -a, so dotfiles are hidden by
+;; default; toggle per-buffer with C-c . / joe/dired-toggle-dotfiles).
+;; do not duplicate it here.
 (add-hook 'dired-mode-hook #'dired-omit-mode)  ; Hide non-essential files per buffer
 ;; inhibit-compacting-font-caches is now set in early-init.el
 (setq nerd-icons-dired-disable-submodule-check t)  ; If this option exists
