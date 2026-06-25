@@ -62,7 +62,15 @@
   :config
   (setq eww-search-prefix "https://duckduckgo.com/html/?q=")
   (setq eww-download-directory "~/Downloads/")
+  (setq eww-history t)
+  (setq eww-readable-urls
+	'("https://plato.stanford.edu/.*"
+          "https://www.marxists.org/.*"
+	  "https://splash247.com/.*"
+	  "https://theloadstar.com/.*"
+          ("https://en.wikipedia.org/.*" . t)))  
   :bind
+  ("C-c e" . eww)
   (:map eww-mode-map
         ("M-n" . eww-next-url)
         ("M-p" . eww-previous-url)))
