@@ -29,7 +29,8 @@
   (setq org-goto-max-level 3)
   (setq org-hide-block-startup t)
   ;; Use joe/notes-dir so this works from both Windows and WSL Emacs.
-  (setq org-agenda-files (list joe/notes-dir))
+(setq org-agenda-files
+      (directory-files-recursively joe/notes-dir "\\.org\\'"))
   (setq org-startup-folded 'fold)
   (setq org-capture-templates
         `(("l" "Link" entry
