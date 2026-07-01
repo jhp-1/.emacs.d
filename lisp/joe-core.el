@@ -125,6 +125,7 @@ initial non-graphical frame.  Skips the update unless both are real colors."
 	    (interactive)
 	    (hide-mode-line-mode 'toggle)))
 (keymap-global-set "M-<f4>" 'delete-frame)
+(keymap-global-set "<f5>" 'call-last-kbd-macro)
 (put 'narrow-to-region 'disabled nil)
 (put 'downcase-region 'disabled nil)
 

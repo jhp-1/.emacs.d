@@ -281,10 +281,12 @@ entry's current in-vocabulary keywords."
 
 (use-package saveplace-pdf-view
   :ensure t
+  :after (:any doc-view pdf-tools)
+  :demand t
   :init
   (save-place-mode 1))
 
-;;;; PDF metadata
+;;;; Pdf metadata
 (defun joe/citar--files-by-citekey (citekey)
   "Find PDFs in `citar-library-paths' whose basename matches CITEKEY."
   (seq-filter #'file-exists-p

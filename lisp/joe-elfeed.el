@@ -107,7 +107,7 @@
           ("https://sootyempiric.blogspot.com/feeds/posts/default?alt=rss" philosophy) ; The Sooty Empiric
           ("https://philosopheroftheoilsands.substack.com/feed" philosophy)            ; Philosopher of the Oil Sands
           ("https://henadology.wordpress.com/feed/" philosophy religion) ; Henadology
-
+("https://plato.stanford.edu/rss/sep.xml" philosophy)
           ;; --- esotericism ---
           ("https://shwep.net/podcast/feed/" esotericism history)        ; SHWEP
           ("https://eliasartista.substack.com/feed" esotericism)         ; Avalon  (verify)
@@ -134,6 +134,7 @@
           ("https://emacsredux.com/atom.xml" emacs)                      ; Emacs Redux
           ("https://protesilaos.com/master.xml" emacs)                   ; Protesilaos
           ("https://sachachua.com/blog/category/emacs/feed" emacs)       ; Sacha Chua (emacs)
+
 
           ;; --- science ---
           ("https://booty.substack.com/feed" science)                    ; Nuts & Boltzmann  (verify)
