@@ -35,7 +35,8 @@
                      (lambda ()
                        (require 'joe-org-notes)
                        (require 'joe-career)
-                       (require 'joe-research)))
+                       (require 'joe-research)
+                       (require 'joe-python)))
 
 (run-with-idle-timer 0.5 nil
                      (lambda ()
