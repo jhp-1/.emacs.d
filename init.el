@@ -36,7 +36,8 @@
                        (require 'joe-org-notes)
                        (require 'joe-career)
                        (require 'joe-research)
-                       (require 'joe-python)))
+                       (require 'joe-python)
+                       (require 'joe-counting-house)))
 
 (run-with-idle-timer 0.5 nil
                      (lambda ()
