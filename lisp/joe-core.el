@@ -98,6 +98,10 @@ initial non-graphical frame.  Skips the update unless both are real colors."
 ;; savehist
 (savehist-mode t)
 
+;; Save bookmarks after every change (default only saves on clean exit,
+;; which loses them when the daemon is killed abruptly)
+(setq bookmark-save-flag 1)
+
 ;; Real autosave
 (auto-save-visited-mode 1)
 (setq auto-save-visited-interval 60)
@@ -199,6 +203,37 @@ Version: 2022-04-05"
   (setq aw-background nil)
   (setq aw-leading-char-style 'char)
   (setq aw-dispatch-always t))
+
+;;;; Daemon exit diagnostics
+;; The daemon has been dying with no Windows crash dump and no Code
+;; Integrity block logged against it, so capture whatever Emacs itself
+;; knows at exit time.  Only fires for graceful exits (kill-emacs called
+;; for any reason) -- an external TerminateProcess kill won't run this,
+;; and that absence is itself a useful signal.
+(setq server-log t)
+
+(defun joe/log-daemon-exit ()
+  (when (daemonp)
+    (ignore-errors
+      (with-temp-buffer
+        (insert (format "\n===== exiting %s (pid %d) =====\n"
+                         (format-time-string "%Y-%m-%d %H:%M:%S")
+                         (emacs-pid)))
+        (insert "-- last messages --\n")
+        (when (get-buffer "*Messages*")
+          (insert (with-current-buffer "*Messages*"
+                    (buffer-substring (max (point-min) (- (point-max) 4000))
+                                       (point-max)))))
+        (insert "\n-- server log --\n")
+        (when (get-buffer "*server*")
+          (insert (with-current-buffer "*server*"
+                    (buffer-substring (max (point-min) (- (point-max) 2000))
+                                       (point-max)))))
+        (write-region (point-min) (point-max)
+                       (expand-file-name "daemon-exit.log" user-emacs-directory)
+                       t)))))
+
+(add-hook 'kill-emacs-hook #'joe/log-daemon-exit)
 
 (provide 'joe-core)
 ;;; joe-core.el ends here

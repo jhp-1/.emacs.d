@@ -1,5 +1,13 @@
 ;;; joe-completion.el --- Completion and minibuffer configuration -*- lexical-binding: t; -*-
 
+;; Don't let GC fire while a minibuffer is open. consult-dir builds a big
+;; candidate list (recentf + project + bookmarks) that trips the 16MB
+;; threshold mid-command, causing intermittent lag.
+(add-hook 'minibuffer-setup-hook
+          (lambda () (setq gc-cons-threshold most-positive-fixnum)))
+(add-hook 'minibuffer-exit-hook
+          (lambda () (setq gc-cons-threshold (* 16 1024 1024))))
+
 ;;;; vertico
 (use-package vertico
   :ensure t
