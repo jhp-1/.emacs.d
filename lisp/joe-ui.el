@@ -9,6 +9,16 @@
 ;;;; Cursor
 (setq-default cursor-type 'bar)
 
+;;;; Bell
+;; Emacs dings on every trivial event (point hitting end of buffer, C-g in the
+;; minibuffer, isearch wrapping), which on Windows is the loud system alert
+;; sound rather than a discreet beep.  `ring-bell-function' takes precedence
+;; over `visible-bell', so pointing it at `ignore' silences the audible bell
+;; and the screen flash together; `visible-bell' is pinned to nil so nothing
+;; re-enables the flash if that precedence ever changes.
+(setq ring-bell-function #'ignore)
+(setq visible-bell nil)
+
 ;;;; Pulsar
 (use-package pulsar
   :ensure t
