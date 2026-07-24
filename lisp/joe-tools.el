@@ -27,32 +27,19 @@
   :config
   (setq magit-display-buffer-function #'magit-display-buffer-fullframe-status-v1))
 
-;;;; PowerShell via comint
-(defun powershell ()
-  "Open a PowerShell buffer."
+;;;; ghostel
+(defun ghostel-home ()
+  "Open ghostel in the home directory."
   (interactive)
-  (let ((buf (get-buffer-create "*powershell*")))
-    (pop-to-buffer buf)
-    (unless (comint-check-proc buf)
-      (make-comint-in-buffer "powershell" buf "powershell.exe" nil "-NoLogo")
-      (shell-mode))))
+  (let ((default-directory "C:/Users/Joe/"))
+    (ghostel)))
 
-(global-set-key (kbd "C-c s") #'powershell)
-
-;;;;; eshell
-(defun eshell-at-home ()
-  "Opens or creates an eshell buffer at ~/."
-  (interactive)
-  (if (equal (get-buffer "*eshell ~/*") nil)
-      (let ((default-directory "~/"))
-        (let ((new-buffer (get-buffer-create "*eshell ~/*")))
-          (with-current-buffer new-buffer
-            (eshell-mode)
-            (switch-to-buffer new-buffer))))
-    (switch-to-buffer "*eshell ~/*")))
-
-(use-package eshell
-  :ensure nil)
+(use-package ghostel
+  :ensure t
+  :custom
+  (ghostel-shell "powershell.exe")
+  :bind
+  ("C-c s" . ghostel-home))
 
 ;;;; eww
 (use-package eww
@@ -63,6 +50,7 @@
   (setq eww-search-prefix "https://duckduckgo.com/html/?q=")
   (setq eww-download-directory "~/Downloads/")
   (setq eww-history t)
+  (setq eww-auto-rename-buffer 'title)
   (setq eww-readable-urls
 	'("https://plato.stanford.edu/.*"
           "https://www.marxists.org/.*"
@@ -99,7 +87,19 @@
   :bind
   ("C-c t t" . tmr)
   ("C-c t r" . tmr-timer-remove)
-  ("C-c t s" . tmr-timer-start))
+  ("C-c t s" . tmr-timer-start)
+  :config
+  (pcase system-type
+    ('windows-nt
+     (setq tmr-sound-file "C:/Windows/Media/Alarm10.wav")
+     (defun tmr-sound-play (&rest _)
+       "Play sound on Windows using PowerShell."
+       (when tmr-sound-file
+         (call-process "powershell.exe" nil 0 nil
+                       "-Command"
+                       (format "$p=New-Object System.Media.SoundPlayer('%s');$p.PlaySync()" tmr-sound-file)))))
+    ('gnu/linux
+     (setq tmr-sound-file "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"))))
 
 (provide 'joe-tools)
 ;;; joe-tools.el ends here

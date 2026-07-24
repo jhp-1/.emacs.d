@@ -7,7 +7,8 @@
           (lambda () (setq gc-cons-threshold most-positive-fixnum)))
 (add-hook 'minibuffer-exit-hook
           (lambda () (setq gc-cons-threshold (* 16 1024 1024))))
-
+;;;; recentf
+(setq recentf-max-menu-items 10)
 ;;;; vertico
 (use-package vertico
   :ensure t

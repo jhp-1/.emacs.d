@@ -71,6 +71,9 @@
   (zotra-server-path "http://127.0.0.1:1969")
   (zotra-default-bibliography (list (expand-file-name "My Library.bib" joe/texts-dir)))
   (zotra-default-entry-format "bibtex")
+  ;; K10plus ISBN lookups routinely take 40-70s; the 15s default guaranteed
+  ;; "Request failed" timeouts. ponytail: fixed high ceiling, not adaptive.
+  (zotra-url-retrieve-timeout 120)
   (zotra-use-curl nil))
 
 ;;;; Controlled keyword vocabulary
@@ -286,6 +289,17 @@ entry's current in-vocabulary keywords."
   :init
   (save-place-mode 1))
 
+;;;; buffer-to-pdf
+(use-package buffer-to-pdf
+  :ensure t
+  :init
+  ;; Then upgrade it with the command `package-vc-upgrade' or `package-vc-upgrade-all'.
+  (unless (package-installed-p 'buffer-to-pdf)
+    (package-vc-install "https://github.com/protesilaos/buffer-to-pdf.git"))
+  :config
+  ;; Configure `buffer-to-pdf-directory' to specify where PDF files are stored.
+  ;; This is the default value:
+  (setq buffer-to-pdf-directory (expand-file-name "~/Downloads/")))
 ;;;; Pdf metadata
 (defun joe/citar--files-by-citekey (citekey)
   "Find PDFs in `citar-library-paths' whose basename matches CITEKEY."

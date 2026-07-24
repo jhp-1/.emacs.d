@@ -9,7 +9,6 @@
 
 (use-package elfeed
   :ensure t
-  :defer t
   :bind ("C-c w" . elfeed)
   :custom
   (elfeed-use-curl t)
