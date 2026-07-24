@@ -562,10 +562,9 @@ Works from Dired buffer with DOI in filename."
     (message "Added %d new annotation%s" added (if (= added 1) "" "s"))))
 
 (defun joe/--pdfannots-command (pdf-path)
-  "Return the command list to invoke pdfannots on PDF-PATH."
-  (if (eq system-type 'windows-nt)
-      (list "pdfannots-wsl.cmd" pdf-path)
-    (list "pdfannots" "--no-group" pdf-path)))
+  "Return the command list to invoke pdfannots on PDF-PATH.
+pdfannots runs as a native Python package on all platforms now."
+  (list "pdfannots" "--no-group" pdf-path))
 
 (defun joe/--run-pdfannots-async (pdf-path target-buf)
   "Run pdfannots on PDF-PATH and merge into TARGET-BUF when done."

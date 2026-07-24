@@ -47,7 +47,6 @@
 (run-with-idle-timer 1 nil
                      (lambda ()
                        (require 'joe-tools)
-                       (require 'joe-mail)
                        (require 'joe-elfeed)))
 
 ;; Restore GC settings and report startup time
