@@ -154,19 +154,42 @@ source-supplied keywords into the controlled vocabulary."
   ;; append so it runs after `bibtex-clean-entry' has normalised the entry
   (add-hook 'zotra-after-get-bibtex-entry-hook #'joe/bib-strip-keywords t))
 
+(defvar joe/--exiftool-warned nil
+  "Non-nil once the missing-exiftool warning has been issued this session.")
+
+(defun joe/--exiftool ()
+  "Return the exiftool program, or nil after warning once.
+Every PDF-metadata write is a no-op without exiftool.  This used to fail
+silently -- when the WSL setup went away so did exiftool, and months of
+`joe/bib-set-keywords' calls wrote the bib but quietly never touched a
+single PDF.  Warn loudly instead, exactly once per session."
+  (or (executable-find "exiftool")
+      (progn
+        (unless joe/--exiftool-warned
+          (setq joe/--exiftool-warned t)
+          (display-warning
+           'joe/research
+           "exiftool not found -- PDF metadata will NOT be written.
+Install it and put exiftool.exe on `exec-path' (~/bin is already on PATH)."
+           :warning))
+        nil)))
+
 (defun joe/--write-pdf-keywords (file keywords)
   "Write KEYWORDS (a list of strings) to FILE's metadata via exiftool.
 Replaces any existing Keywords/Subject; an empty list clears them.
-`-sep' makes exiftool store them as a proper multi-valued list."
-  (when (executable-find "exiftool")
-    (let ((val (string-join keywords ", ")))
-      (ignore-errors
-        (call-process "exiftool" nil nil nil
-                      "-overwrite_original_in_place"
-                      "-sep" ", "
-                      (concat "-Keywords=" val)
-                      (concat "-Subject=" val)
-                      (joe/--native-path file))))))
+`-sep' makes exiftool store them as a proper multi-valued list.
+Return non-nil on success, nil on failure, so callers can report rather
+than assume."
+  (let ((prog (joe/--exiftool)))
+    (when prog
+      (let ((val (string-join keywords ", ")))
+        (eq 0 (ignore-errors
+                (call-process prog nil nil nil
+                              "-overwrite_original_in_place"
+                              "-sep" ", "
+                              (concat "-Keywords=" val)
+                              (concat "-Subject=" val)
+                              (joe/--native-path file))))))))
 
 (defun joe/--bib-set-keywords-field (value)
   "Set the keywords field of the bibtex entry at point to VALUE (a string).
@@ -209,11 +232,45 @@ entry's current in-vocabulary keywords."
                              (joe/citar--files-by-citekey citekey)))))
         (joe/--write-pdf-keywords pdf chosen)))))
 
+(defun joe/--bib-untagged-entries ()
+  "Return a list of (CITEKEY . TITLE) for entries with no/empty keywords.
+Reads the bib file directly rather than going through citar, so it works
+from anywhere and needs no loaded cache."
+  (let ((bib (joe/--bib-file)) (out '()))
+    (when (and bib (file-readable-p bib))
+      (with-temp-buffer
+        (insert-file-contents bib)
+        (goto-char (point-min))
+        (let ((starts '()))
+          (while (re-search-forward "^@[a-zA-Z]+[ \t]*{[ \t]*\\([^,\n]+\\)," nil t)
+            (push (cons (string-trim (match-string 1)) (match-beginning 0)) starts))
+          (setq starts (nreverse starts))
+          (let ((n (length starts)))
+            (dotimes (i n)
+              (let* ((key (car (nth i starts)))
+                     (beg (cdr (nth i starts)))
+                     (end (if (< (1+ i) n) (cdr (nth (1+ i) starts)) (point-max)))
+                     (body (buffer-substring beg end))
+                     (kw (when (string-match
+                                "^[ \t]*keywords[ \t]*=[ \t]*[{\"]\\([^}\"]*\\)[\"}]" body)
+                           (string-trim (match-string 1 body))))
+                     (title (when (string-match
+                                   "^[ \t]*title[ \t]*=[ \t]*{\\([^}]*\\)}" body)
+                              (string-trim (match-string 1 body)))))
+                (when (or (null kw) (string-empty-p kw))
+                  (push (cons key (or title "")) out))))))))
+    (nreverse out)))
+
 (defun joe/bib-audit-keywords ()
-  "Report keywords in the bib file that are not in `joe/bib-keywords'."
+  "Audit the bib file's keywords against `joe/bib-keywords'.
+Reports both off-vocabulary keywords AND entries carrying no keywords at
+all.  The latter matters: an untagged entry has no keywords field to be
+matched, so it is invisible to a purely vocabulary-based check -- which
+is how a whole batch import once sat untagged and unnoticed."
   (interactive)
   (let ((bib (joe/--bib-file))
-        (bad (make-hash-table :test #'equal)))
+        (bad (make-hash-table :test #'equal))
+        (untagged (joe/--bib-untagged-entries)))
     (with-temp-buffer
       (insert-file-contents bib)
       (goto-char (point-min))
@@ -222,8 +279,8 @@ entry's current in-vocabulary keywords."
         (dolist (kw (mapcar #'string-trim (split-string (match-string 1) ",")))
           (unless (or (string-empty-p kw) (member kw joe/bib-keywords))
             (puthash kw (1+ (gethash kw bad 0)) bad)))))
-    (if (zerop (hash-table-count bad))
-        (message "All bib keywords are in the controlled vocabulary.")
+    (if (and (zerop (hash-table-count bad)) (null untagged))
+        (message "Clean: all keywords in vocabulary, and every entry is tagged.")
       (let ((rows nil)
             (buf (get-buffer-create "*bib-keyword-audit*")))
         (maphash (lambda (k v) (push (cons k v) rows)) bad)
@@ -232,10 +289,25 @@ entry's current in-vocabulary keywords."
           (let ((inhibit-read-only t))
             (erase-buffer)
             (insert (format "%d off-vocabulary keyword(s):\n\n" (length rows)))
-            (dolist (r rows) (insert (format "%5d  %s\n" (cdr r) (car r))))
+            (if rows
+                (dolist (r rows) (insert (format "%5d  %s\n" (cdr r) (car r))))
+              (insert "  (none)\n"))
+            (insert (format "\n%d entr%s with NO keywords:\n\n"
+                            (length untagged) (if (= 1 (length untagged)) "y" "ies")))
+            (if untagged
+                (dolist (u untagged)
+                  (insert (format "  %-44s %s\n"
+                                  (truncate-string-to-width (car u) 44)
+                                  (truncate-string-to-width (cdr u) 60))))
+              (insert "  (none)\n"))
+            (when untagged
+              (insert "\nRun `joe/bib-tag-untagged-entries' (C-c f T) to tag these.\n"))
             (goto-char (point-min))
             (special-mode)))
-        (display-buffer buf)))))
+        (display-buffer buf)
+        (message "Audit: %d off-vocabulary keyword(s), %d untagged entr%s"
+                 (length rows) (length untagged)
+                 (if (= 1 (length untagged)) "y" "ies"))))))
 
 (keymap-global-set "C-c f t" #'joe/bib-set-keywords)
 (keymap-global-set "C-c f k" #'joe/bib-audit-keywords)
@@ -616,8 +688,9 @@ pdfannots runs as a native Python package on all platforms now."
 ;;;; Batch book import (Downloads -> bib + library)
 ;; Unattended importer: resolve each PDF's ISBN (filename first, then the PDF's
 ;; text layer), fetch a bib entry via zotra, append it, copy the PDF into the
-;; library as <citekey>.pdf, write metadata, and -- on a verified copy -- delete
-;; the Downloads original.  Anything it cannot resolve is left in place and
+;; library as <citekey>.pdf, write metadata, auto-tag it from the controlled
+;; keyword vocabulary via an LLM, and -- on a verified copy -- delete the
+;; Downloads original.  Anything it cannot resolve is left in place and
 ;; listed in the *book-import-report* buffer.
 (require 'cl-lib)
 
@@ -801,7 +874,11 @@ Navigates with `bibtex-next-entry' from the top: `bibtex-beginning-of-entry'
 does not land on the entry when point starts before it on a blank line."
   (when (and entry-string (stringp entry-string))
     (with-temp-buffer
-      (insert entry-string)
+      ;; Leading newline is load-bearing: `bibtex-next-entry' searches
+      ;; FORWARD, so an entry beginning at point-min is skipped and the
+      ;; parse silently returns nil.  Zotra's output happens to carry
+      ;; leading whitespace, but a hand-written entry does not.
+      (insert "\n" entry-string)
       (bibtex-mode)
       (bibtex-set-dialect 'BibTeX t)
       (goto-char (point-min))
@@ -816,6 +893,30 @@ does not land on the entry when point starts before it on a blank line."
        (string-trim
         (replace-regexp-in-string "\\`[{\"]\\|[}\"]\\'" "" (string-trim raw)))))))
 
+(defun joe/--rename-citekey-in-entry (entry-string old new)
+  "Return ENTRY-STRING with citekey OLD replaced by NEW in its header."
+  (replace-regexp-in-string
+   (concat "\\(@[a-zA-Z]+[ \t]*{[ \t]*\\)" (regexp-quote old) "\\([ \t]*,\\)")
+   (concat "\\1" new "\\2") entry-string t))
+
+(defconst joe/--citekey-unsafe-rx "[<>:\"/\\|?*]"
+  "Characters that are illegal in a Windows filename.
+The citekey becomes the PDF's filename, so any of these makes the copy
+fail.  A colon is the common one -- zotra derives keys from the
+shorttitle, so \"Crashed: how a decade...\" yields `tooze_crashed:_2019'
+-- and on NTFS \"name:stream\" means an alternate data stream, so the
+copy either errors or silently writes into a hidden stream.")
+
+(defun joe/--sanitize-citekey (entry-string key)
+  "Return (ENTRY . KEY) with filename-hostile characters stripped from KEY.
+Applied on import so a new entry's key is always usable as
+<citekey>.pdf.  Existing keys are left alone -- rewriting them would
+break citar-denote note references."
+  (if (or (null key) (not (string-match-p joe/--citekey-unsafe-rx key)))
+      (cons entry-string key)
+    (let ((clean (replace-regexp-in-string joe/--citekey-unsafe-rx "" key)))
+      (cons (joe/--rename-citekey-in-entry entry-string key clean) clean))))
+
 (defun joe/--ensure-unique-citekey (entry-string key)
   "Return (ENTRY . KEY), renaming KEY in ENTRY-STRING if it collides."
   (if (or (null key) (not (joe/--bib-has-citekey-p key)))
@@ -824,16 +925,16 @@ does not land on the entry when point starts before it on a blank line."
       (while (progn (setq newkey (format "%s%d" key n))
                     (joe/--bib-has-citekey-p newkey))
         (setq n (1+ n)))
-      (cons (replace-regexp-in-string
-             (concat "\\(@[a-zA-Z]+[ \t]*{[ \t]*\\)" (regexp-quote key) "\\([ \t]*,\\)")
-             (concat "\\1" newkey "\\2") entry-string t)
-            newkey))))
+      (cons (joe/--rename-citekey-in-entry entry-string key newkey) newkey))))
 
 (defun joe/--append-entry-to-bib (entry-string)
   "Append ENTRY-STRING to the bib file and return its (unique) citekey."
   (let* ((parsed (joe/--parse-bibtex-entry entry-string))
          (key (cdr (assoc-string "=key=" parsed t)))
-         (uniq (joe/--ensure-unique-citekey entry-string key))
+         ;; Sanitize BEFORE the collision check, so uniqueness is tested
+         ;; against the key that will actually be written.
+         (safe (joe/--sanitize-citekey entry-string key))
+         (uniq (joe/--ensure-unique-citekey (car safe) (cdr safe)))
          (final-entry (car uniq))
          (final-key (cdr uniq))
          (bib (joe/--bib-file)))
@@ -887,6 +988,199 @@ does not land on the entry when point starts before it on a blank line."
                       (format "-Author=%s" (or author "")))
                 (when year (list (format "-XMP-dc:date=%s" year)))
                 (list (joe/--native-path file))))))))
+
+;;;;; LLM auto-tagging (OpenRouter)
+;; Tagging is otherwise "on-touch" (`joe/bib-set-keywords', by hand), which
+;; has no natural trigger for a batch of unattended imports -- those would
+;; otherwise sit untagged indefinitely, invisibly (`joe/bib-audit-keywords'
+;; only catches off-vocabulary keywords, not a missing keywords field).  Ask
+;; a small/free OpenRouter model to pick from `joe/bib-keywords' instead.
+;; The reply is whitelist-filtered against that same vocabulary, so a
+;; chatty or careless model can wrap its answer in explanation but cannot
+;; inject an off-vocabulary tag; any failure (no key, no curl, network
+;; hiccup, unparseable reply) just yields no tags rather than interrupting
+;; the import.  Source-supplied keywords are still stripped unconditionally
+;; on fetch (`joe/bib-strip-keywords') -- this only ever adds fresh,
+;; in-vocabulary tags afterward.
+(require 'auth-source)
+
+(defvar joe/batch-import-auto-tag t
+  "When non-nil, `joe/batch-import-books' asks an LLM to choose keywords
+for each newly-committed entry from `joe/bib-keywords'.  Set to nil to
+skip tagging (e.g. no OpenRouter key, or rate-limited) without losing
+the setting.")
+
+(defvar joe/openrouter-model "google/gemma-4-26b-a4b-it:free"
+  "OpenRouter model slug used to auto-tag imported books.
+The task is closed-vocabulary word-picking, not reasoning, so a small,
+fast, plain instruction-tuned free-tier model is plenty -- avoid the
+`-reasoning' variants, which tend to pad replies with chain-of-thought
+before the actual answer.  Free slugs rotate; see
+https://openrouter.ai/models?max_price=0 for current options.")
+
+(defun joe/--openrouter-api-key ()
+  "Return the OpenRouter API key from $OPENROUTER_API_KEY or auth-source.
+The key lives OUTSIDE this repo, which is public.  Add a line like
+    machine openrouter.ai password sk-or-v1-...
+to ~/.authinfo (searched first by default in Emacs 30) or ~/.authinfo.gpg
+if you want it encrypted at rest.  Never inline a key in this file."
+  (or (getenv "OPENROUTER_API_KEY")
+      (auth-source-pick-first-password :host "openrouter.ai")))
+
+(defvar joe/openrouter-min-interval 3.2
+  "Minimum seconds between OpenRouter requests.
+OpenRouter caps free-model use at 20 requests/minute regardless of
+credit; 3.2s spacing keeps a batch just under that.  Tripping it returns
+HTTP 429, which is easily misread as the daily quota being exhausted.")
+
+(defvar joe/openrouter-max-retries 3
+  "How many times to retry a 429 before giving up on a request.")
+
+(defvar joe/--openrouter-last-call nil
+  "`float-time' of the last OpenRouter request, for pacing.")
+
+(defun joe/--openrouter-pace ()
+  "Sleep as needed to respect `joe/openrouter-min-interval'."
+  (when joe/--openrouter-last-call
+    (let ((wait (- joe/openrouter-min-interval
+                   (- (float-time) joe/--openrouter-last-call))))
+      (when (> wait 0) (sleep-for wait))))
+  (setq joe/--openrouter-last-call (float-time)))
+
+(defun joe/--openrouter-chat (system user)
+  "POST a one-shot SYSTEM/USER chat completion to OpenRouter.
+Return a cons (STATUS . VALUE) where STATUS is one of:
+  ok         VALUE is the reply's content string
+  no-key     no API key, or curl unavailable
+  ratelimit  429 survived `joe/openrouter-max-retries' backed-off retries
+  error      VALUE is a short diagnostic string
+Callers get to distinguish \"model declined to tag this\" from \"the
+request never happened\" -- collapsing those two into nil is what makes
+a failed batch look like a successfully untagged one."
+  (let ((key (joe/--openrouter-api-key)))
+    (if (not (and key (executable-find "curl")))
+        (cons 'no-key nil)
+      (let ((attempt 0) (result nil))
+        (while (and (null result) (<= attempt joe/openrouter-max-retries))
+          (joe/--openrouter-pace)
+          (let* ((payload (json-serialize
+                           `((model . ,joe/openrouter-model)
+                             (temperature . 0)
+                             (max_tokens . 60)
+                             (messages
+                              . ,(vector `((role . "system") (content . ,system))
+                                         `((role . "user") (content . ,user)))))))
+                 (out (ignore-errors
+                        (with-temp-buffer
+                          (insert payload)
+                          (let ((coding-system-for-read 'utf-8)
+                                (coding-system-for-write 'utf-8))
+                            (call-process-region
+                             (point-min) (point-max) "curl" t t nil
+                             "-s" "--max-time" "30" "-w" "\n__HTTP__%{http_code}"
+                             "https://openrouter.ai/api/v1/chat/completions"
+                             "-H" (concat "Authorization: Bearer " key)
+                             "-H" "Content-Type: application/json"
+                             "--data-binary" "@-"))
+                          (buffer-string))))
+                 (code (and out (if (string-match "__HTTP__\\([0-9]+\\)" out)
+                                    (match-string 1 out) "?")))
+                 (body (and out (replace-regexp-in-string
+                                 "\n__HTTP__[0-9]+\\'" "" out))))
+            (cond
+             ((null out) (setq result (cons 'error "curl failed")))
+             ((equal code "429")
+              ;; Back off and retry: usually the 20/min cap, not the daily quota.
+              (setq attempt (1+ attempt))
+              (when (<= attempt joe/openrouter-max-retries)
+                (sleep-for (* 5.0 attempt)))
+              (when (> attempt joe/openrouter-max-retries)
+                (setq result (cons 'ratelimit nil))))
+             ((not (equal code "200"))
+              (setq result (cons 'error (format "HTTP %s" code))))
+             (t
+              (let* ((json (ignore-errors
+                             (json-parse-string body :object-type 'alist
+                                                :array-type 'list)))
+                     (content (alist-get 'content
+                                         (alist-get 'message
+                                                    (car (alist-get 'choices json))))))
+                (setq result (if content (cons 'ok content)
+                               (cons 'error "unparseable response"))))))))
+        (or result (cons 'ratelimit nil))))))
+
+(defvar joe/bib-keyword-guidance
+  "Rules:
+- Choose ONLY from the vocabulary below.  Reply with a comma-separated
+  list, lower-case, nothing else -- no explanation, no reasoning.
+- Be sparing.  Most books need 1-3 tags; never give more than 4.  Tag
+  what the book is ABOUT, not every subject it touches on.  A tag that
+  would fit most of a philosophy library (e.g. `epistemology' on any
+  work that discusses knowing) discriminates nothing -- leave it off
+  unless it is a principal subject of the book.
+- Era tags mark the period the book's SUBJECT belongs to or concerns --
+  NEVER when the book was written.  MOST BOOKS GET NO ERA TAG AT ALL:
+  omit era for perennial philosophy and for technical works.  A study
+  of a pre-1900 figure takes that figure's era.  The eras, which use
+  these specific ranges and not their everyday senses, are:
+      ancient       antiquity, to ~500
+      medieval      ~500-1400
+      renaissance   ~1400-1600
+      early-modern  ~1600-1800
+      modern        the long 19th century, ~1800-1900 ONLY
+      contemporary  a present-day phenomenon is the subject (mass
+                    media, current politics) -- never mere recent
+                    authorship
+  A 20th- or 21st-century work of philosophy is NOT `modern' and NOT
+  `contemporary'; it almost always takes no era tag.
+- Reply with nothing at all if no tag genuinely fits."
+  "Usage rules sent to the LLM alongside `joe/bib-keywords'.
+Mirrors the tag dictionary above that definition -- in particular the era
+convention, which a model will otherwise read as the publication date,
+and the injunction against over-tagging.  Kept separate from
+`joe/bib-keywords' so the vocabulary stays a plain list for
+`completing-read-multiple' and `joe/bib-audit-keywords'.")
+
+(defun joe/--llm-pick-keywords (title author year &optional extra)
+  "Ask an LLM to choose from `joe/bib-keywords' for this work.
+TITLE, AUTHOR and YEAR describe the book; optional EXTRA is an alist of
+further ((\"Publisher\" . VAL) ...) context -- a publisher or an abstract
+sharpens the guess considerably over a bare title.
+
+Return a cons (STATUS . TAGS) with STATUS from `joe/--openrouter-chat'.
+On \\='ok, TAGS is the reply filtered to the controlled vocabulary, so a
+chatty model cannot inject an off-vocabulary tag; it may legitimately be
+empty when nothing fits.  Never signals."
+  (let* ((system (format "You are tagging a book for a personal philosophy \
+library, using a fixed controlled vocabulary.\n\n%s\n\nVocabulary: %s"
+                         joe/bib-keyword-guidance
+                         (string-join joe/bib-keywords ", ")))
+         (user (concat
+                (format "Title: %s\nAuthor: %s\nYear: %s"
+                        (or title "unknown") (or author "unknown") (or year "unknown"))
+                (mapconcat (lambda (kv)
+                             (format "\n%s: %s" (car kv)
+                                     (truncate-string-to-width (cdr kv) 700)))
+                           (seq-filter #'cdr (or extra '())) "")))
+         (res (joe/--openrouter-chat system user)))
+    (if (eq (car res) 'ok)
+        (cons 'ok (seq-filter (lambda (w) (member w joe/bib-keywords))
+                              (split-string (downcase (cdr res)) "[,;\n .]+" t)))
+      res)))
+
+(defun joe/--bib-set-keywords-for-key (key value)
+  "Set the keywords field of bib entry KEY to VALUE (a string).
+Like `joe/--bib-set-keywords-field' but locates KEY itself, for callers
+not already positioned inside the entry."
+  (let ((bib (joe/--bib-file)))
+    (when (and bib (file-readable-p bib))
+      (with-current-buffer (or (find-buffer-visiting bib) (find-file-noselect bib))
+        (save-excursion
+          (goto-char (point-min))
+          (when (re-search-forward
+                 (concat "@[a-zA-Z]+[ \t]*{[ \t]*" (regexp-quote key) "[ \t]*,") nil t)
+            (joe/--bib-set-keywords-field value)))
+        (save-buffer)))))
 
 ;;;;; Resolution + commit
 (defvar joe/zotra-max-attempts 8
@@ -958,6 +1252,23 @@ candidates as having come from the PDF text layer."
          (citekey (joe/--append-entry-to-bib entry))
          (dest (joe/--copy-to-library file citekey)))
     (joe/--write-pdf-metadata-from-entry parsed dest)
+    (when joe/batch-import-auto-tag
+      (let* ((res (joe/--llm-pick-keywords
+                   (joe/--bibtex-field parsed "title")
+                   (joe/--bibtex-field parsed "author")
+                   (joe/--bibtex-field parsed "year")
+                   (list (cons "Publisher" (joe/--bibtex-field parsed "publisher")))))
+             (status (car res))
+             (keywords (cdr res)))
+        (if (not (eq status 'ok))
+            ;; Record WHY there are no tags, so the report can say so rather
+            ;; than leaving a silently untagged book behind.
+            (setq result (plist-put result :tag-error status))
+          (when keywords
+            (joe/--bib-set-keywords-for-key citekey (string-join keywords ", "))
+            (unless (joe/--write-pdf-keywords dest keywords)
+              (setq result (plist-put result :pdf-keywords-failed t)))
+            (setq result (plist-put result :keywords keywords))))))
     (setq result (plist-put result :citekey citekey))
     (setq result (plist-put result :dest dest))
     (if (and (file-exists-p dest)
@@ -997,6 +1308,14 @@ candidates as having come from the PDF text layer."
                          (format "    isbn : %s%s\n" (plist-get r :isbn)
                                  (if (plist-get r :ocr) "   (from PDF text)" ""))
                          (format "    title: %s\n" (plist-get r :etitle)))
+                 (when (plist-get r :keywords)
+                   (insert (format "    tags : %s%s\n"
+                                   (string-join (plist-get r :keywords) ", ")
+                                   (if (plist-get r :pdf-keywords-failed)
+                                       "   (bib only — PDF write failed)" ""))))
+                 (when (plist-get r :tag-error)
+                   (insert (format "    tags : NOT TAGGED (%s) — rerun C-c f T\n"
+                                   (plist-get r :tag-error))))
                  (when verify
                    (insert (format "    NOTE : may not match filename title — verify\n")))
                  (when (plist-get r :dest)
@@ -1060,11 +1379,167 @@ Operates on the marked files when called from Dired, otherwise on every
       (let ((res (joe/--import-one-book file)))
         (when (and (not joe/batch-import-dry-run)
                    (eq (plist-get res :status) 'ok))
-          (setq res (joe/--commit-import res)))
+          ;; Isolate each book: an unattended run over a whole Downloads
+          ;; folder must not lose the remaining books because one of them
+          ;; errored (a bad citekey, a locked file, a full disk).  Record
+          ;; the failure and carry on.
+          (setq res (condition-case err
+                        (joe/--commit-import res)
+                      (error
+                       (setq res (plist-put res :status 'failed))
+                       (plist-put res :reason
+                                  (format "commit error: %s"
+                                          (error-message-string err)))))))
         (push res results)))
     (joe/--show-import-report (nreverse results) total)))
 
 (keymap-global-set "C-c f b" #'joe/batch-import-books)
+
+;;;; Tag sweep (backfill entries the importer left untagged)
+;; Tagging is otherwise on-touch, which has no trigger for entries that
+;; arrive in bulk -- and `joe/bib-audit-keywords' historically could not see
+;; them, since an entry with no keywords field has nothing to match against.
+;; This sweep closes that loop: it is idempotent (skips anything already
+;; tagged), so it is safe to re-run, and it resumes naturally after a
+;; rate-limit stop because the entries it completed are no longer untagged.
+
+(defun joe/--bib-entry-fields (citekey fields)
+  "Return an alist of FIELDS -> value for CITEKEY, reading the bib directly."
+  (let ((bib (joe/--bib-file)) (out '()))
+    (when (and bib (file-readable-p bib))
+      (with-temp-buffer
+        (insert-file-contents bib)
+        (goto-char (point-min))
+        (when (re-search-forward
+               (concat "^@[a-zA-Z]+[ \t]*{[ \t]*" (regexp-quote citekey) "[ \t]*,") nil t)
+          (let* ((beg (match-beginning 0))
+                 (end (or (save-excursion
+                            (when (re-search-forward "^@[a-zA-Z]+[ \t]*{" nil t)
+                              (match-beginning 0)))
+                          (point-max)))
+                 (body (buffer-substring beg end)))
+            (dolist (f fields)
+              (when (string-match (concat "^[ \t]*" f "[ \t]*=[ \t]*{\\([^}]*\\)}") body)
+                (push (cons (capitalize f)
+                            (joe/citar--clean-bibtex-value
+                             (string-trim (match-string 1 body))))
+                      out)))))))
+    (nreverse out)))
+
+(defun joe/--dedup-paths (paths)
+  "Remove duplicate PATHS, case-insensitively on Windows.
+`joe/citar--files-by-citekey' probes both \".pdf\" and \".PDF\", and on a
+case-insensitive filesystem BOTH report as existing for the same physical
+file -- so a naive `delete-dups' leaves two names for one file and every
+write happens twice."
+  (let ((seen (make-hash-table :test #'equal)) (out '()))
+    (dolist (p paths)
+      (let ((canon (if (memq system-type '(windows-nt ms-dos))
+                       (downcase (expand-file-name p))
+                     (expand-file-name p))))
+        (unless (gethash canon seen)
+          (puthash canon t seen)
+          (push p out))))
+    (nreverse out)))
+
+(defun joe/--pdfs-for-citekey (citekey)
+  "Return existing PDFs for CITEKEY: <citekey>.pdf plus `file' field entries.
+The `file' field may hold a bare basename (the portable form citar
+resolves against `citar-library-paths'), so try that against the library
+directory as well as verbatim."
+  (let* ((dir (joe/--library-dir))
+         (fields (joe/--bib-entry-fields citekey '("file")))
+         (raw (cdr (assoc "File" fields)))
+         (cands (append (joe/citar--files-by-citekey citekey)
+                        (when raw
+                          (mapcan (lambda (p)
+                                    (let ((p (string-trim p)))
+                                      (list p (expand-file-name
+                                               (file-name-nondirectory p) dir))))
+                                  (split-string raw ";" t))))))
+    (joe/--dedup-paths
+     (seq-filter (lambda (f) (and (string-match-p "\\.pdf\\'" (downcase f))
+                                  (file-exists-p f)))
+                 cands))))
+
+(defun joe/bib-tag-untagged-entries (&optional limit)
+  "Tag every bib entry that currently has no keywords, via the LLM.
+Writes the controlled-vocabulary tags to the bib entry and mirrors them
+into any PDF found for it.  With a prefix argument, prompt for a LIMIT on
+how many entries to process in this run.
+
+Idempotent and resumable: entries tagged in an earlier run are no longer
+untagged, so re-running simply continues.  Stops cleanly if OpenRouter
+rate-limits, reporting what remains rather than silently leaving entries
+untagged.  Honors `joe/batch-import-dry-run'."
+  (interactive (list (when current-prefix-arg
+                       (read-number "Max entries this run: " 50))))
+  (require 'citar)
+  (let* ((all (joe/--bib-untagged-entries))
+         (todo (if limit (seq-take all limit) all))
+         (n (length todo))
+         (done 0) (skipped 0) (failed 0) (pdfs 0)
+         (stopped nil) (rows '()))
+    (when (zerop n)
+      (user-error "No untagged entries -- nothing to do"))
+    (catch 'stop
+      (dolist (e todo)
+        (let* ((key (car e))
+               (fields (joe/--bib-entry-fields
+                        key '("title" "author" "year" "publisher" "abstract")))
+               (res (joe/--llm-pick-keywords
+                     (cdr (assoc "Title" fields))
+                     (cdr (assoc "Author" fields))
+                     (cdr (assoc "Year" fields))
+                     (list (cons "Publisher" (cdr (assoc "Publisher" fields)))
+                           (cons "Abstract/contents" (cdr (assoc "Abstract" fields))))))
+               (status (car res))
+               (tags (cdr res)))
+          (message "[%d/%d] %s -> %s" (1+ (+ done skipped failed)) n key
+                   (pcase status
+                     ('ok (if tags (string-join tags ", ") "(none)"))
+                     (_ (format "! %s" status))))
+          (redisplay)
+          (pcase status
+            ('ratelimit (setq stopped 'ratelimit) (throw 'stop nil))
+            ('no-key (setq stopped 'no-key) (throw 'stop nil))
+            ('error (cl-incf failed))
+            ('ok
+             (if (null tags)
+                 (cl-incf skipped)
+               (unless joe/batch-import-dry-run
+                 (joe/--bib-set-keywords-for-key key (string-join tags ", "))
+                 (dolist (pdf (joe/--pdfs-for-citekey key))
+                   (when (joe/--write-pdf-keywords pdf tags) (cl-incf pdfs))))
+               (cl-incf done)
+               (push (cons key tags) rows)))))))
+    (let ((buf (get-buffer-create "*bib-tag-sweep*")))
+      (with-current-buffer buf
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (insert (format "Tag sweep — %s%s\n" (format-time-string "%F %R")
+                          (if joe/batch-import-dry-run
+                              "   [DRY RUN — no changes made]" "")))
+          (insert (make-string 72 ?-) "\n\n")
+          (dolist (r (nreverse rows))
+            (insert (format "  %-44s %s\n"
+                            (truncate-string-to-width (car r) 44)
+                            (string-join (cdr r) ", "))))
+          (insert "\n" (make-string 72 ?-) "\n")
+          (insert (format "tagged %d   no-tag %d   errors %d   PDFs written %d\n"
+                          done skipped failed pdfs))
+          (insert (format "untagged remaining: %d\n"
+                          (length (joe/--bib-untagged-entries))))
+          (when stopped
+            (insert (format "\nSTOPPED: %s — re-run C-c f T to continue.\n" stopped)))
+          (goto-char (point-min))
+          (special-mode)))
+      (display-buffer buf))
+    (message "Tag sweep: %d tagged, %d no-tag, %d errors, %d PDFs%s"
+             done skipped failed pdfs
+             (if stopped (format "  [STOPPED: %s]" stopped) ""))))
+
+(keymap-global-set "C-c f T" #'joe/bib-tag-untagged-entries)
 
 (provide 'joe-research)
 ;;; joe-research.el ends here
