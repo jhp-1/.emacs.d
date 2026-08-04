@@ -81,6 +81,43 @@
   :init
   (global-corfu-mode))
 
+;;;; cape -- extra completion-at-point functions
+(defun joe/cape-dict-setup ()
+  "Add `cape-dict' to the local Capfs, for prose buffers."
+  (add-hook 'completion-at-point-functions #'cape-dict 90 t))
+
+(use-package cape
+  :ensure t
+  ;; C-c p is a prefix map of every Capf as a directly callable command,
+  ;; e.g. C-c p d for Dabbrev, C-c p f for file paths.
+  :bind ("C-c p" . cape-prefix-map)
+  :init
+  ;; These go on the *global* value of `completion-at-point-functions', so
+  ;; mode-specific Capfs (elisp, org, eglot) still win: the buffer-local list
+  ;; is always consulted first.
+  (add-hook 'completion-at-point-functions #'cape-dabbrev)
+  (add-hook 'completion-at-point-functions #'cape-file)
+  (add-hook 'completion-at-point-functions #'cape-elisp-block) ; org-babel src blocks
+  :config
+  ;; Word completion from a system word list, replacing the Ispell Capf turned
+  ;; off at the top of this file.  There is no word list on Windows, where this
+  ;; simply stays off.
+  (when (and (stringp cape-dict-file) (file-readable-p cape-dict-file))
+    (add-hook 'text-mode-hook #'joe/cape-dict-setup)))
+
+;;;; dabbrev
+;; cape-dabbrev and M-/ both scrape buffer text, so keep them away from
+;; buffers whose "text" is really a rendering of something binary.
+(use-package dabbrev
+  :ensure nil
+  ;; Swap the two: completion (which goes through Corfu) on the easier key.
+  :bind (("M-/" . dabbrev-completion)
+         ("C-M-/" . dabbrev-expand))
+  :config
+  (add-to-list 'dabbrev-ignored-buffer-regexps "\\` ")
+  (dolist (mode '(authinfo-mode doc-view-mode pdf-view-mode tags-table-mode))
+    (add-to-list 'dabbrev-ignored-buffer-modes mode)))
+
 ;;;; nerd icons for completion
 (use-package nerd-icons-completion
   :ensure t
