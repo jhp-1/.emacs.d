@@ -10,7 +10,7 @@ Personal Emacs configuration.
 ├── early-init.el     # Early init (GC, UI suppression)
 └── lisp/
     ├── joe-core.el       # Package management, core settings
-    ├── joe-completion.el # Vertico, Corfu, Consult, Embark
+    ├── joe-completion.el # Vertico, Corfu, Cape, Consult, Embark
     ├── joe-files.el      # Dired, ibuffer, file management
     ├── joe-mail.el       # Notmuch, mu4e, msmtp
     ├── joe-org-notes.el  # Org, Denote, org-ql
