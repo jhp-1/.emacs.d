@@ -27,9 +27,48 @@
   :init
   (vertico-mode))
 
+;;;;; vertico-directory -- Ido-like path editing in find-file
+;; RET on a directory descends into it, DEL deletes a whole path component.
+(use-package vertico-directory
+  :ensure nil
+  :after vertico
+  :bind (:map vertico-map
+              ("RET" . vertico-directory-enter)
+              ("DEL" . vertico-directory-delete-char)
+              ("M-DEL" . vertico-directory-delete-word))
+  ;; Tidy the shadowed part of the path when typing ~/ or / mid-prompt.
+  :hook (rfn-eshadow-update-overlay . vertico-directory-tidy))
+
+;;;;; vertico-repeat -- resume the previous minibuffer session
+;; M-R reopens the last one, with its input and selection intact.  Sessions are
+;; persisted by savehist, which joe-core.el enables.
+(use-package vertico-repeat
+  :ensure nil
+  :after vertico
+  :bind (("M-R" . vertico-repeat)
+         :map vertico-map
+         ("M-P" . vertico-repeat-previous)
+         ("M-N" . vertico-repeat-next))
+  :hook (minibuffer-setup . vertico-repeat-save))
+
+;;;;; vertico-multiform -- per-command display styles
+(use-package vertico-multiform
+  :ensure nil
+  :after vertico
+  :init
+  ;; Grep-style results are easier to read in a full window than in the
+  ;; handful of lines the minibuffer gives them.
+  (setq vertico-multiform-commands
+        '((consult-ripgrep buffer)
+          (consult-line-multi buffer)
+          (consult-imenu buffer)))
+  (vertico-multiform-mode))
+
 ;;;; marginalia
 (use-package marginalia
   :ensure t
+  :bind (:map minibuffer-local-map
+              ("M-A" . marginalia-cycle))
   :init
   (marginalia-mode))
 
@@ -64,8 +103,10 @@
 ;;;; corfu
 (use-package corfu
   :ensure t
-  ;; I also have (setq tab-always-indent 'complete) for TAB to complete
-  ;; when it does not need to perform an indentation change.
+  ;; TAB completes when no indentation change is needed -- see
+  ;; `tab-always-indent' at the top of this file.  Corfu binds TAB in
+  ;; `corfu-map' itself; the <tab> binding below is only for the modes that
+  ;; bind <tab> rather than TAB.
   :bind (:map corfu-map ("<tab>" . corfu-complete))
   :config
   (setq corfu-preview-current nil)
@@ -137,7 +178,13 @@
   :ensure t
   :bind
   ("C-." . embark-act)
-  ("C-," . embark-collect))
+  ("C-;" . embark-dwim)                     ;; act with the default action
+  ("C-," . embark-collect)
+  ("C-h B" . embark-bindings)               ;; search all active keybindings
+  :init
+  ;; C-h after a prefix key (C-x C-h, C-c C-h, ...) now opens a searchable
+  ;; completion list of that prefix's bindings rather than a static grid.
+  (setq prefix-help-command #'embark-prefix-help-command))
 
 ;;;; consult
 (use-package consult
@@ -156,6 +203,11 @@
    ("C-c m" . consult-mode-command)         ;; Mode-specific commands
    ("C-c k" . consult-kmacro) ;; Keyboard macros
    ("C-x r b" . consult-bookmark)
+   ("C-x C-r" . consult-recent-file)        ;; orig. find-file-read-only
+   ("C-x p b" . consult-project-buffer)     ;; project-scoped buffers/files
+   ([remap goto-line] . consult-goto-line)  ;; M-g g, with live preview
+   ("M-g f" . consult-flymake)              ;; jump to a diagnostic
+   ("M-s i" . consult-info)                 ;; search the Info manuals
    ;; Isearch integration
    ("M-s e" . consult-isearch-history)
    :map isearch-mode-map
@@ -168,7 +220,35 @@
    ("M-s" . consult-history)                 ;; orig. next-matching-history-element
    ("M-r" . consult-history))              
   :config
+  ;; Preview stays off by default -- the commands that open files eagerly are
+  ;; slow here.  But the in-buffer commands only move point in a buffer that
+  ;; is already loaded, so they get preview back; the expensive ones get an
+  ;; explicit M-. instead of nothing.  Set `consult-preview-key' back to nil
+  ;; and delete the two `consult-customize' forms to return to no preview.
   (setq consult-preview-key nil)
+  (consult-customize
+   consult-line consult-line-multi consult-outline
+   consult-mark consult-global-mark consult-imenu
+   consult-goto-line consult-flymake consult-theme
+   :preview-key 'any)
+  (consult-customize
+   consult-buffer consult-project-buffer consult-recent-file
+   consult-ripgrep consult-bookmark consult-xref consult-info
+   :preview-key "M-.")
+
+  ;; "<" starts narrowing: "< b" restricts consult-buffer to buffers, and
+  ;; "< ?" lists the keys available in the current command.
+  (setq consult-narrow-key "<")
+
+  ;; Register preview with proper formatting and sorting, used by C-x r j and
+  ;; friends as well as by consult's own register commands.
+  (advice-add #'register-preview :override #'consult-register-window)
+  (setq register-preview-delay 0.5)
+
+  ;; Show xref results (M-., M-?) through consult, with preview.
+  (setq xref-show-xrefs-function #'consult-xref)
+  (setq xref-show-definitions-function #'consult-xref)
+
   ;; Bookmarks live on C-x r b; keep them out of the buffer list.  Consult 3.0
   ;; renamed the source variables (consult--source-* -> consult-source-*) and
   ;; 3.3 deleted the old names, so remove both and stay version-agnostic.
