@@ -7,8 +7,18 @@
           (lambda () (setq gc-cons-threshold most-positive-fixnum)))
 (add-hook 'minibuffer-exit-hook
           (lambda () (setq gc-cons-threshold (* 16 1024 1024))))
-;;;; recentf
-(setq recentf-max-menu-items 10)
+;;;; Built-in completion settings
+;; TAB indents, then completes once indentation is already correct.  Without
+;; this Corfu is only reachable through `completion-at-point' (C-M-i).
+(setq tab-always-indent 'complete)
+
+;; Emacs 30+: drop the Ispell Capf from text modes.  It shadows more useful
+;; completions in prose buffers; a dictionary Capf covers the same ground.
+(setq text-mode-ispell-word-completion nil)
+
+;; Hide commands in M-x which do not apply to the current mode.
+(setq read-extended-command-predicate #'command-completion-default-include-p)
+
 ;;;; vertico
 (use-package vertico
   :ensure t
@@ -27,19 +37,23 @@
 (use-package orderless
   :ensure t
   :config
-  (setq orderless-component-separator " +")
+  ;; `orderless-component-separator' is left at its default
+  ;; (`orderless-escapable-split'), which splits on spaces like " +" but also
+  ;; allows a literal space to be matched by escaping it as "\ ".
   (setq completion-styles '(orderless basic))
   (setq completion-category-defaults nil)
-  (setq completion-category-overrides '((file (styles partial-completion))))
+  ;; `basic' first so dynamic completion tables (TRAMP hosts and remote paths)
+  ;; keep working; `partial-completion' supplies wildcard expansion in find-file.
+  (setq completion-category-overrides '((file (styles basic partial-completion))))
   ;; SPC should never complete: use it for `orderless' groups.
-  (let ((map minibuffer-local-completion-map))
-    (define-key map (kbd "SPC") nil)
-    (define-key map (kbd "?") nil)))
+  (keymap-set minibuffer-local-completion-map "SPC" nil)
+  (keymap-set minibuffer-local-completion-map "?" nil))
 
 
 ;;;; which-key
+;; Built into Emacs 30, so no need to pull the ELPA copy.
 (use-package which-key
-  :ensure t
+  :ensure nil
   :init
   (which-key-mode))
 
@@ -60,9 +74,10 @@
   (corfu-popupinfo-mode 1) ; shows documentation after `corfu-popupinfo-delay'
 
   ;; Sort by input history (no need to modify `corfu-sort-function').
-  (with-eval-after-load 'savehist
-    (corfu-history-mode 1)
-    (add-to-list 'savehist-additional-variables 'corfu-history))
+  ;; Corfu 2.1+ registers `corfu-history' with savehist itself, provided
+  ;; `savehist-mode' is already on -- joe-core.el enables it before this file
+  ;; is loaded.
+  (corfu-history-mode 1)
   :init
   (global-corfu-mode))
 
@@ -71,8 +86,8 @@
   :ensure t
   :after marginalia
   :config
-  (nerd-icons-completion-mode)
-  (add-hook 'marginalia-mode-hook #'nerd-icons-completion-marginalia-setup))
+  ;; `nerd-icons-completion-mode' installs the marginalia hook itself.
+  (nerd-icons-completion-mode))
 
 (use-package nerd-icons-corfu
   :ensure t
@@ -98,6 +113,8 @@
    ("M-g k" . consult-global-mark)          ;; Go to global mark
    ("M-g i" . consult-imenu)                ;; Replace imenu
    ("C-M-s" . consult-ripgrep)              ;; Replace search with ripgrep
+   ("M-s l" . consult-line)                 ;; Search lines in this buffer
+   ("M-s L" . consult-line-multi)           ;; ... across all open buffers
    ("C-c h" . consult-history)              ;; Command history
    ("C-c m" . consult-mode-command)         ;; Mode-specific commands
    ("C-c k" . consult-kmacro) ;; Keyboard macros
@@ -115,8 +132,12 @@
    ("M-r" . consult-history))              
   :config
   (setq consult-preview-key nil)
+  ;; Bookmarks live on C-x r b; keep them out of the buffer list.  Consult 3.0
+  ;; renamed the source variables (consult--source-* -> consult-source-*) and
+  ;; 3.3 deleted the old names, so remove both and stay version-agnostic.
   (setq consult-buffer-sources
-        (delq 'consult--source-bookmark consult-buffer-sources)))
+        (seq-difference consult-buffer-sources
+                        '(consult--source-bookmark consult-source-bookmark))))
 
 ;;;; consult-denote
 (use-package consult-denote
