@@ -85,6 +85,7 @@
   :ensure t
   :bind
   ("C-." . embark-act)
+  ("C-;" . embark-dwim)
   ("C-," . embark-collect))
 
 ;;;; consult
