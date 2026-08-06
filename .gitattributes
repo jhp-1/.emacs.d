@@ -1,0 +1,34 @@
+# Line endings.
+#
+# Without this, the repo had no policy: this machine has core.autocrlf=true
+# (commits CRLF->LF, checks out LF->CRLF) while the Linux boxes have it unset.
+# The same file could therefore be committed LF from one machine and CRLF from
+# another, and git would report every single line as changed - which is exactly
+# how lisp/joe-tools.el ended up as one whole-file merge conflict rather than
+# two edits in different parts of the file.
+#
+# LF everywhere, in the repository AND in the working tree on all platforms.
+# Emacs reads LF perfectly well on Windows, so there is no reason to keep two
+# conventions alive.
+* text=auto eol=lf
+
+# Windows script hosts are less forgiving than Emacs - cmd.exe and Windows
+# Script Host can choke on LF-only files. None of these are tracked today
+# (emacs-daemon.vbs and start-daemon.cmd are currently untracked), but setting
+# it now means it is already correct if they are ever added.
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+*.ps1  text eol=crlf
+*.vbs  text eol=crlf
+
+# Never apply text conversion to these.
+*.elc  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.pdf  binary
+*.ttf  binary
+*.otf  binary
+*.gz   binary
+*.zip  binary
