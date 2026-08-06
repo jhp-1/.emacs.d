@@ -27,10 +27,18 @@
 (setq native-comp-async-report-warnings-errors nil)
 (setq warning-suppress-types '((comp)))
 
-;; Locked appliance: /home is mounted noexec, so native-compiled .eln files
-;; cannot be dlopen'd from the user eln-cache. Run packages as byte-code.
-(setq native-comp-jit-compilation nil)
-(setq native-comp-enable-subr-trampolines nil)
+;; The x270 is a locked-down console appliance: /home is mounted noexec, so
+;; native-compiled .eln files cannot be dlopen'd from the user eln-cache, and
+;; there is no GUI at all. Everything keyed off this constant is a no-op on
+;; every other machine — an earlier revision set the native-comp variables
+;; unconditionally, which would also have disabled native-comp on Windows.
+(defconst joe/console-appliance-p (string= (system-name) "x270")
+  "Non-nil on the x270 console appliance (noexec /home, no window system).")
+
+(when joe/console-appliance-p
+  ;; Run packages as byte-code; .elc is interpreted, .eln would be dlopen'd.
+  (setq native-comp-jit-compilation nil)
+  (setq native-comp-enable-subr-trampolines nil))
 
 (provide 'early-init)
 ;;; early-init.el ends here

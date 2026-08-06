@@ -321,7 +321,7 @@ is how a whole batch import once sat untagged and unnoticed."
   (prefer-coding-system 'utf-8-unix))
 ;;;;; pdf-tools
 (use-package pdf-tools
-  :if (display-graphic-p)
+  :unless (bound-and-true-p joe/console-appliance-p)
   :ensure t
   :demand t
   :pin melpa
@@ -356,7 +356,7 @@ is how a whole batch import once sat untagged and unnoticed."
                      (pdf-view-midnight-minor-mode))))
 
 (use-package saveplace-pdf-view
-  :if (display-graphic-p)
+  :unless (bound-and-true-p joe/console-appliance-p)
   :ensure t
   :after (:any doc-view pdf-tools)
   :demand t

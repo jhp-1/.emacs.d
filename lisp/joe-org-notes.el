@@ -29,8 +29,13 @@
   (setq org-goto-max-level 3)
   (setq org-hide-block-startup t)
   ;; Use joe/notes-dir so this works from both Windows and WSL Emacs.
+;; Guarded: `directory-files-recursively' signals if the directory is absent,
+;; and because this sits inside org's :config that would abort the entire
+;; block - taking `org-capture-templates' and everything after it with it.
+;; A missing notes dir should cost you the agenda, not the whole org setup.
 (setq org-agenda-files
-      (directory-files-recursively joe/notes-dir "\\.org\\'"))
+      (when (file-directory-p joe/notes-dir)
+        (directory-files-recursively joe/notes-dir "\\.org\\'")))
   (setq org-startup-folded 'fold)
   (setq org-capture-templates
         `(("l" "Link" entry

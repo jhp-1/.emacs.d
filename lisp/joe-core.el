@@ -22,6 +22,13 @@
   :ensure t
   :demand t
   :config
+  ;; compile-angel calls native-compile EXPLICITLY, so it ignores
+  ;; `native-comp-jit-compilation'. On the appliance the .eln files it emits
+  ;; land in a noexec /home and then fail to load ("failed to map segment from
+  ;; shared object"), which cascades into use-package failing to parse every
+  ;; package that pulls in an affected file. Byte-compilation alone is enough.
+  (when (bound-and-true-p joe/console-appliance-p)
+    (setq compile-angel-enable-native-compile nil))
   (compile-angel-on-load-mode)
   (add-hook 'emacs-lisp-mode-hook #'compile-angel-on-save-local-mode))
 ;;;; auto-package-update
@@ -46,12 +53,20 @@ initial non-graphical frame.  Skips the update unless both are real colors."
 
 ;;;; Cross-platform path constants
 ;; Used by joe-org-notes.el, joe-research.el etc. so they don't hardcode drive letters.
+;; NB: the non-Windows branch assumed WSL (/mnt/d/...). On the x270 appliance
+;; that path does not exist, and `directory-files-recursively' on a missing
+;; directory signals - which aborted org's whole :config block and left
+;; `org-capture-templates' void, cascading into zotra/citar failures.
 (defconst joe/notes-dir
-  (if (eq system-type 'windows-nt) "d:/Notes" "/mnt/d/Notes")
+  (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/notes"))
+        ((eq system-type 'windows-nt) "d:/Notes")
+        (t "/mnt/d/Notes"))
   "Root directory for Denote notes.")
 
 (defconst joe/texts-dir
-  (if (eq system-type 'windows-nt) "d:/Texts" "/mnt/d/Texts")
+  (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/texts"))
+        ((eq system-type 'windows-nt) "d:/Texts")
+        (t "/mnt/d/Texts"))
   "Root directory for PDFs and bibliography.")
 
 ;;;; WSL <-> Windows path translation helpers

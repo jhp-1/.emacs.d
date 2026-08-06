@@ -69,8 +69,12 @@
   ("<f6>" . olivetti-mode))
 
 ;;;; fontaine
+;; Font faces are a window-system concept; on the appliance's TTY fontaine
+;; warns "Cannot use Fontaine in a terminal emulator". The console font is set
+;; system-wide instead (services.kmscon -> Aporetic Serif Mono).
 (use-package fontaine
   :ensure t
+  :unless (bound-and-true-p joe/console-appliance-p)
   :config
   (setq fontaine-presets
         '((regular
@@ -94,8 +98,13 @@
 ;; Use modus-vivendi (dark) and modus-operandi (light) — both are built into
 ;; Emacs 29+ and always available, avoiding theme-not-found errors at startup.
 ;; joe--sync-pdf-midnight-colors is defined in joe-core.el.
+;; auto-dark polls the OS for a light/dark appearance setting. A bare console
+;; has none, so it errors with "Could not determine a viable theme detection
+;; mechanism!" and leaves whichever theme happens to be first — modus-vivendi,
+;; i.e. dark. Skip it there and pin the light theme explicitly.
 (use-package auto-dark
   :ensure t
+  :unless (bound-and-true-p joe/console-appliance-p)
   :custom
   (custom-safe-themes t)
   (auto-dark-themes '((modus-vivendi) (modus-operandi)))
@@ -103,6 +112,12 @@
   :hook
   ((auto-dark-dark-mode auto-dark-light-mode) . joe--sync-pdf-midnight-colors)
   :init (auto-dark-mode))
+
+(when (bound-and-true-p joe/console-appliance-p)
+  ;; kmscon gives a 256-colour terminal, so modus-operandi renders as a real
+  ;; light theme rather than the 16-colour approximation the bare Linux VT
+  ;; would have forced. <f8> (modus-themes-toggle) still switches to dark.
+  (load-theme 'modus-operandi t))
 
 ;;;; ultra-scroll
 (use-package ultra-scroll

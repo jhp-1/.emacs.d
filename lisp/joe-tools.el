@@ -34,8 +34,12 @@
   (let ((default-directory "C:/Users/Joe/"))
     (ghostel)))
 
+;; Windows-only: it shells out to powershell.exe, defaults to C:/Users/Joe/,
+;; and ships a native ghostel-module.so. On the appliance the module cannot be
+;; built (no compiler) or loaded (noexec /home), so it only warns on startup.
 (use-package ghostel
   :ensure t
+  :if (eq system-type 'windows-nt)
   :custom
   (ghostel-shell "powershell.exe")
   :bind

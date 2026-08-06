@@ -24,3 +24,4 @@ transient/
 url/
 .last-package-update-day
 network-security.data
+daemon-exit.log
