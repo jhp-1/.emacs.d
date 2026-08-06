@@ -37,6 +37,21 @@
       (when (file-directory-p joe/notes-dir)
         (directory-files-recursively joe/notes-dir "\\.org\\'")))
   (setq org-startup-folded 'fold)
+  (setq org-todo-keywords
+        '((sequence "TODO(t)" "CANCEL(c!)" "DONE(d!)")))
+
+  :hook
+  (org-mode . abbrev-mode))
+
+;;;;; Capture templates
+;; Keyed on `org-capture', NOT `org' - `org-capture-templates' is a defcustom
+;; in org-capture.el, so loading org alone does not define it. Every place
+;; that touches the variable (here, the career templates below, and
+;; joe-counting-house.el) uses the same guard, so ordering follows init.el's
+;; require order rather than which feature happens to load first. This block
+;; must `setq' before the others `add-to-list', which it does because
+;; joe-org-notes is required first.
+(with-eval-after-load 'org-capture
   (setq org-capture-templates
         `(("l" "Link" entry
            (file+headline ,(expand-file-name "20240410T184722--reading-list__life_reading.org" joe/notes-dir) "Websites")
@@ -59,12 +74,50 @@
            :no-save t
            :immediate-finish nil
            :kill-buffer t
-           :jump-to-captured t)))
-  (setq org-todo-keywords
-        '((sequence "TODO(t)" "CANCEL(c!)" "DONE(d!)")))
+           :jump-to-captured t))))
 
-  :hook
-  (org-mode . abbrev-mode))
+;;;; Career roadmap
+;; Merged in from the former joe-career.el: one capture template, two denote
+;; keywords, one org-ql view and a keybinding is settings for a single org
+;; file, not a subsystem. (joe-counting-house.el stays separate - that one is
+;; a real subsystem with its own transient menu and harvest machinery.)
+(defconst joe/career-applications-file
+  (expand-file-name "career/20260624T102500--job-applications__career.org" joe/notes-dir)
+  "Denote note the job-application capture template files into.
+Lives in the `career/' project silo (git repo), not the notes root.")
+
+(with-eval-after-load 'denote
+  (dolist (kw '("career" "project"))
+    (add-to-list 'denote-known-keywords kw)))
+
+(defun joe/applications-open ()
+  "List open job applications via `org-ql' - TODOs whose STATUS is not offer/rejected."
+  (interactive)
+  (require 'org-ql)
+  (org-ql-search (list joe/career-applications-file)
+    '(and (todo "TODO")
+          (property "STATUS")
+          (not (property "STATUS" "offer"))
+          (not (property "STATUS" "rejected")))))
+
+;; Was previously defined inside a `with-eval-after-load 'org' block, so the
+;; binding silently did not exist until org happened to load. It has no reason
+;; to wait on org: the command requires what it needs itself.
+(keymap-global-set "C-c n A" #'joe/applications-open)
+
+(with-eval-after-load 'org-capture
+  (add-to-list 'org-capture-templates
+               `("a" "Job application / outreach" entry
+                 (file+headline ,joe/career-applications-file "Applications")
+                 ,(concat
+                   "* TODO %^{Firm} — %^{Role} :%^{Lane|rulesascode|analytics|aicompliance|apprenticeship}:\n"
+                   ":PROPERTIES:\n"
+                   ":ADDED:    %U\n"
+                   ":STATUS:   %^{Status|applied|replied|call|interview|offer|rejected}\n"
+                   ":END:\n"
+                   "- Next action: %^{Next action}\n%?")
+                 :empty-lines 1)
+               t))
 
 ;;;;; org-modern
 (use-package org-modern
