@@ -145,14 +145,39 @@
               (set-face-background 'default bg frame)
               (set-face-foreground 'default fg frame)))))))
 
+  ;; Modus draws the mode line's border as an :underline on a TTY (confirmed:
+  ;; :underline "#5a5a5a" on mode-line/mode-line-active, "#a3a3a3" on
+  ;; -inactive, with :box unspecified) - it substitutes one for the box it
+  ;; cannot draw in a terminal. The mode line already reads as a distinct band
+  ;; from its own background, so the underline is pure noise here. Must run on
+  ;; the same hook as the face sync: modus reapplies its own faces on every
+  ;; theme load, so a one-shot set-face-attribute would be undone by <f8>.
+  (defun joe/console-flatten-mode-line (&rest _)
+    "Strip modus's TTY mode-line underline."
+    (dolist (face '(mode-line mode-line-active mode-line-inactive))
+      (when (facep face)
+        (set-face-attribute face nil :underline nil :overline nil))))
+
   (add-hook 'modus-themes-after-load-theme-hook #'joe/console-sync-default-face)
+  (add-hook 'modus-themes-after-load-theme-hook #'joe/console-flatten-mode-line)
   ;; Frames made later by emacsclient need it too: a theme loaded inside the
   ;; daemon before any frame existed does not reach them on its own.
   (add-hook 'server-after-make-frame-hook #'joe/console-sync-default-face)
+  (add-hook 'server-after-make-frame-hook #'joe/console-flatten-mode-line)
   (add-hook 'after-make-frame-functions #'joe/console-sync-default-face)
+  (add-hook 'after-make-frame-functions #'joe/console-flatten-mode-line)
+
+  ;; The trailing "-------" is not modus and not a theme: stock Emacs defaults
+  ;; `mode-line-end-spaces' to (:eval (unless (display-graphic-p) "-%-")),
+  ;; where %- means "fill the rest of the line with dashes". It is gated on
+  ;; display-graphic-p, which is exactly why it never appears in the GUI on
+  ;; Windows and only showed up here. The mode-line face already spans the
+  ;; full window width, so nothing needs filling.
+  (setq-default mode-line-end-spaces "")
 
   (load-theme 'modus-operandi t)
-  (joe/console-sync-default-face))
+  (joe/console-sync-default-face)
+  (joe/console-flatten-mode-line))
 
 ;;;; ultra-scroll
 (use-package ultra-scroll

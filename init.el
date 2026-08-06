@@ -47,7 +47,8 @@
 (run-with-idle-timer 1 nil
                      (lambda ()
                        (require 'joe-tools)
-                       (require 'joe-elfeed)))
+                       (require 'joe-elfeed)
+                       (require 'joe-media)))
 
 ;; Restore GC settings and report startup time
 (add-hook 'emacs-startup-hook

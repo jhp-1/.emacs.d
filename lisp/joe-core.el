@@ -86,6 +86,12 @@ initial non-graphical frame.  Skips the update unless both are real colors."
         (t "/mnt/d/Texts"))
   "Root directory for PDFs and bibliography.")
 
+(defconst joe/noises-dir
+  (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/noises"))
+        ((eq system-type 'windows-nt) "d:/Noises")
+        (t "/mnt/d/Noises"))
+  "Root directory for ambient/background sound files.")
+
 ;;;; WSL <-> Windows path translation helpers
 (defun joe/wsl-to-win-path (path)
   "Convert a WSL path like /mnt/d/foo to a Windows path d:/foo."
