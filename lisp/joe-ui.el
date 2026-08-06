@@ -114,10 +114,33 @@
   :init (auto-dark-mode))
 
 (when (bound-and-true-p joe/console-appliance-p)
-  ;; kmscon gives a 256-colour terminal, so modus-operandi renders as a real
-  ;; light theme rather than the 16-colour approximation the bare Linux VT
-  ;; would have forced. <f8> (modus-themes-toggle) still switches to dark.
-  (load-theme 'modus-operandi t))
+  ;; On a TTY Emacs emits SGR 39;49 for `default' - "whatever the terminal's
+  ;; own default colours are" - instead of painting the theme's background.
+  ;; Loading a theme therefore only recoloured faces carrying explicit colours
+  ;; (the modeline), leaving the rest at the terminal's background. Pushing
+  ;; bg-main/fg-main onto `default' ourselves puts the background back under
+  ;; the theme's control, so modus-themes-toggle (<f8>) genuinely switches
+  ;; light <-> dark instead of leaving a dark theme stranded on a white
+  ;; terminal.
+  (defun joe/console-sync-default-face (&rest _)
+    "Apply the active modus theme's main colours to the TTY `default' face."
+    (when (fboundp 'modus-themes-get-color-value)
+      (let ((bg (modus-themes-get-color-value 'bg-main))
+            (fg (modus-themes-get-color-value 'fg-main)))
+        (when (and (stringp bg) (stringp fg))
+          (dolist (frame (frame-list))
+            (unless (display-graphic-p frame)
+              (set-face-background 'default bg frame)
+              (set-face-foreground 'default fg frame)))))))
+
+  (add-hook 'modus-themes-after-load-theme-hook #'joe/console-sync-default-face)
+  ;; Frames made later by emacsclient need it too: a theme loaded inside the
+  ;; daemon before any frame existed does not reach them on its own.
+  (add-hook 'server-after-make-frame-hook #'joe/console-sync-default-face)
+  (add-hook 'after-make-frame-functions #'joe/console-sync-default-face)
+
+  (load-theme 'modus-operandi t)
+  (joe/console-sync-default-face))
 
 ;;;; ultra-scroll
 (use-package ultra-scroll
