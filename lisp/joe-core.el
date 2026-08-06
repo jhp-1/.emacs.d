@@ -18,19 +18,36 @@
 (setq package-check-update-on-load nil)
 
 ;;;;; compile-angel
+;; Disabled outright on the appliance rather than tuned. Two distinct failures
+;; came from it there:
+;;   1. It calls native-compile EXPLICITLY, ignoring
+;;      `native-comp-jit-compilation', so it emitted .eln files into a noexec
+;;      /home that then could not be dlopen'd ("failed to map segment from
+;;      shared object") - cascading into use-package failing to parse citar,
+;;      zotra, pdf-tools and everything else touching the affected files.
+;;   2. Even with native compilation off, its byte-compilation of magit
+;;      produced a stale .elc calling `magit-auto-revert-mode--after-load',
+;;      breaking magit on every startup.
+;; package.el already byte-compiles on install, so the value it adds here is
+;; small and the failure modes are not. It stays fully enabled elsewhere.
 (use-package compile-angel
   :ensure t
+  :unless (bound-and-true-p joe/console-appliance-p)
   :demand t
   :config
-  ;; compile-angel calls native-compile EXPLICITLY, so it ignores
-  ;; `native-comp-jit-compilation'. On the appliance the .eln files it emits
-  ;; land in a noexec /home and then fail to load ("failed to map segment from
-  ;; shared object"), which cascades into use-package failing to parse every
-  ;; package that pulls in an affected file. Byte-compilation alone is enough.
-  (when (bound-and-true-p joe/console-appliance-p)
-    (setq compile-angel-enable-native-compile nil))
   (compile-angel-on-load-mode)
   (add-hook 'emacs-lisp-mode-hook #'compile-angel-on-save-local-mode))
+
+;; The notes silo ships a .dir-locals.el with two `eval' forms, so Emacs
+;; prompts about unsafe local variables on every org file it opens. These were
+;; read straight out of that file, so they match byte-for-byte - a
+;; hand-transcribed near-miss would silently keep prompting.
+(dolist (v '((eval . (progn (visual-line-mode 1) (auto-fill-mode -1)))
+             (eval . (setq-local denote-directory
+                                 (or (locate-dominating-file default-directory
+                                                             ".dir-locals.el")
+                                     default-directory)))))
+  (add-to-list 'safe-local-variable-values v))
 ;;;; auto-package-update
 (use-package auto-package-update
   :ensure t

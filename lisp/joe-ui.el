@@ -90,8 +90,14 @@
   (fontaine-set-preset 'regular))
 
 ;;;; nerd-icons
+;; Nerd-icon glyphs live in a private Unicode area that only a patched font
+;; carries. The appliance's console (kmscon) is built without pango, so it has
+;; no fontconfig fallback: whatever single font is configured must contain the
+;; glyph or you get a replacement box. Aporetic is not nerd-patched, hence the
+;; row of "?" boxes. Skip the icon packages there rather than render rubbish.
 (use-package nerd-icons
-  :ensure t)
+  :ensure t
+  :unless (bound-and-true-p joe/console-appliance-p))
 ;; nerd-icons-completion is fully configured in joe-completion.el
 ;; (marginalia hook + nerd-icons-completion-mode); no duplicate block needed here.
 ;;;; auto-dark-emacs

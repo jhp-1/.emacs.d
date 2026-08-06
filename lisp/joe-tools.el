@@ -37,13 +37,16 @@
 ;; Windows-only: it shells out to powershell.exe, defaults to C:/Users/Joe/,
 ;; and ships a native ghostel-module.so. On the appliance the module cannot be
 ;; built (no compiler) or loaded (noexec /home), so it only warns on startup.
-(use-package ghostel
-  :ensure t
-  :if (eq system-type 'windows-nt)
-  :custom
-  (ghostel-shell "powershell.exe")
-  :bind
-  ("C-c s" . ghostel-home))
+;; Wrapped in `when' rather than using :if, because use-package processes
+;; :ensure BEFORE :if - so :if alone still installed the package here, and its
+;; autoloads then warned about the missing native module on every startup.
+(when (eq system-type 'windows-nt)
+  (use-package ghostel
+    :ensure t
+    :custom
+    (ghostel-shell "powershell.exe")
+    :bind
+    ("C-c s" . ghostel-home)))
 
 ;;;; eww
 (use-package eww

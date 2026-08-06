@@ -168,8 +168,10 @@
     (add-to-list 'dabbrev-ignored-buffer-modes mode)))
 
 ;;;; nerd icons for completion
+;; See joe-ui.el: no glyph fallback on the appliance's console.
 (use-package nerd-icons-completion
   :ensure t
+  :unless (bound-and-true-p joe/console-appliance-p)
   :after marginalia
   :config
   ;; `nerd-icons-completion-mode' installs the marginalia hook itself.
@@ -177,6 +179,7 @@
 
 (use-package nerd-icons-corfu
   :ensure t
+  :unless (bound-and-true-p joe/console-appliance-p)
   :after corfu
   :config
   (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
