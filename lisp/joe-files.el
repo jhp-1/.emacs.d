@@ -71,13 +71,16 @@ Hiding is just the absence of ls's -a flag, so flip it and re-list."
   ("C-x C-b" . ibuffer))
 
 ;;;; nerd icons for dired and ibuffer
+;; See joe-ui.el: no glyph fallback on the appliance's console.
 (use-package nerd-icons-dired
   :ensure t
+  :unless (bound-and-true-p joe/console-appliance-p)
   :hook
   (dired-mode . nerd-icons-dired-mode))
 
 (use-package nerd-icons-ibuffer
   :ensure t
+  :unless (bound-and-true-p joe/console-appliance-p)
   :hook (ibuffer-mode . nerd-icons-ibuffer-mode))
 
 ;;;; General Dired optimizations

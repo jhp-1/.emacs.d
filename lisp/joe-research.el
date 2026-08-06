@@ -321,6 +321,7 @@ is how a whole batch import once sat untagged and unnoticed."
   (prefer-coding-system 'utf-8-unix))
 ;;;;; pdf-tools
 (use-package pdf-tools
+  :unless (bound-and-true-p joe/console-appliance-p)
   :ensure t
   :demand t
   :pin melpa
@@ -354,12 +355,19 @@ is how a whole batch import once sat untagged and unnoticed."
                      (joe--sync-pdf-midnight-colors)
                      (pdf-view-midnight-minor-mode))))
 
+;; `save-place-mode' is plain built-in Emacs and has nothing to do with PDFs -
+;; it was only ever being switched on as a side effect of this block. Guarding
+;; the block for the console therefore silently lost "return to where I was in
+;; this file" for every file type, which is if anything more useful on a small
+;; terminal. Enable it unconditionally; only the pdf-view integration is
+;; GUI-specific.
+(save-place-mode 1)
+
 (use-package saveplace-pdf-view
+  :unless (bound-and-true-p joe/console-appliance-p)
   :ensure t
   :after (:any doc-view pdf-tools)
-  :demand t
-  :init
-  (save-place-mode 1))
+  :demand t)
 
 ;;;; buffer-to-pdf
 (use-package buffer-to-pdf

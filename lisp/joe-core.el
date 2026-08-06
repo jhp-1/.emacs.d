@@ -18,12 +18,36 @@
 (setq package-check-update-on-load nil)
 
 ;;;;; compile-angel
+;; Disabled outright on the appliance rather than tuned. Two distinct failures
+;; came from it there:
+;;   1. It calls native-compile EXPLICITLY, ignoring
+;;      `native-comp-jit-compilation', so it emitted .eln files into a noexec
+;;      /home that then could not be dlopen'd ("failed to map segment from
+;;      shared object") - cascading into use-package failing to parse citar,
+;;      zotra, pdf-tools and everything else touching the affected files.
+;;   2. Even with native compilation off, its byte-compilation of magit
+;;      produced a stale .elc calling `magit-auto-revert-mode--after-load',
+;;      breaking magit on every startup.
+;; package.el already byte-compiles on install, so the value it adds here is
+;; small and the failure modes are not. It stays fully enabled elsewhere.
 (use-package compile-angel
   :ensure t
+  :unless (bound-and-true-p joe/console-appliance-p)
   :demand t
   :config
   (compile-angel-on-load-mode)
   (add-hook 'emacs-lisp-mode-hook #'compile-angel-on-save-local-mode))
+
+;; The notes silo ships a .dir-locals.el with two `eval' forms, so Emacs
+;; prompts about unsafe local variables on every org file it opens. These were
+;; read straight out of that file, so they match byte-for-byte - a
+;; hand-transcribed near-miss would silently keep prompting.
+(dolist (v '((eval . (progn (visual-line-mode 1) (auto-fill-mode -1)))
+             (eval . (setq-local denote-directory
+                                 (or (locate-dominating-file default-directory
+                                                             ".dir-locals.el")
+                                     default-directory)))))
+  (add-to-list 'safe-local-variable-values v))
 ;;;; auto-package-update
 (use-package auto-package-update
   :ensure t
@@ -46,13 +70,27 @@ initial non-graphical frame.  Skips the update unless both are real colors."
 
 ;;;; Cross-platform path constants
 ;; Used by joe-org-notes.el, joe-research.el etc. so they don't hardcode drive letters.
+;; NB: the non-Windows branch assumed WSL (/mnt/d/...). On the x270 appliance
+;; that path does not exist, and `directory-files-recursively' on a missing
+;; directory signals - which aborted org's whole :config block and left
+;; `org-capture-templates' void, cascading into zotra/citar failures.
 (defconst joe/notes-dir
-  (if (eq system-type 'windows-nt) "d:/Notes" "/mnt/d/Notes")
+  (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/notes"))
+        ((eq system-type 'windows-nt) "d:/Notes")
+        (t "/mnt/d/Notes"))
   "Root directory for Denote notes.")
 
 (defconst joe/texts-dir
-  (if (eq system-type 'windows-nt) "d:/Texts" "/mnt/d/Texts")
+  (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/texts"))
+        ((eq system-type 'windows-nt) "d:/Texts")
+        (t "/mnt/d/Texts"))
   "Root directory for PDFs and bibliography.")
+
+(defconst joe/noises-dir
+  (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/noises"))
+        ((eq system-type 'windows-nt) "d:/Noises")
+        (t "/mnt/d/Noises"))
+  "Root directory for ambient/background sound files.")
 
 ;;;; WSL <-> Windows path translation helpers
 (defun joe/wsl-to-win-path (path)
@@ -180,6 +218,7 @@ Version: 2022-04-05"
       (funcall initial-major-mode)
       (setq joe/last-untitled-buffer xbuf)))
   joe/last-untitled-buffer)
+(keymap-global-set "C-c x" #'xah-new-empty-buffer)
 
 (setq initial-buffer-choice 'xah-new-empty-buffer)
 

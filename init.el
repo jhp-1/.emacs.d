@@ -34,7 +34,6 @@
 (run-with-idle-timer 0.1 nil
                      (lambda ()
                        (require 'joe-org-notes)
-                       (require 'joe-career)
                        (require 'joe-research)
                        (require 'joe-python)
                        (require 'joe-counting-house)))
@@ -47,7 +46,8 @@
 (run-with-idle-timer 1 nil
                      (lambda ()
                        (require 'joe-tools)
-                       (require 'joe-elfeed)))
+                       (require 'joe-elfeed)
+                       (require 'joe-media)))
 
 ;; Restore GC settings and report startup time
 (add-hook 'emacs-startup-hook

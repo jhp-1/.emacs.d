@@ -122,6 +122,14 @@
   :init
   (global-corfu-mode))
 
+;;;; corfu-terminal
+;; TTY child frames land in Emacs 31; on 30 in a console, the Corfu popup
+;; is inert without this.
+(unless (display-graphic-p)
+  (use-package corfu-terminal
+    :ensure t
+    :config (corfu-terminal-mode)))
+
 ;;;; cape -- extra completion-at-point functions
 (defun joe/cape-dict-setup ()
   "Add `cape-dict' to the local Capfs, for prose buffers."
@@ -160,8 +168,10 @@
     (add-to-list 'dabbrev-ignored-buffer-modes mode)))
 
 ;;;; nerd icons for completion
+;; See joe-ui.el: no glyph fallback on the appliance's console.
 (use-package nerd-icons-completion
   :ensure t
+  :unless (bound-and-true-p joe/console-appliance-p)
   :after marginalia
   :config
   ;; `nerd-icons-completion-mode' installs the marginalia hook itself.
@@ -169,6 +179,7 @@
 
 (use-package nerd-icons-corfu
   :ensure t
+  :unless (bound-and-true-p joe/console-appliance-p)
   :after corfu
   :config
   (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
@@ -177,9 +188,9 @@
 (use-package embark
   :ensure t
   :bind
-  ("C-." . embark-act)
-  ("C-;" . embark-dwim)                     ;; act with the default action
-  ("C-," . embark-collect)
+  ("C-c ." . embark-act)
+  ("C-c ;" . embark-dwim)                     ;; act with the default action
+  ("C-c ," . embark-collect)
   ("C-h B" . embark-bindings)               ;; search all active keybindings
   :init
   ;; C-h after a prefix key (C-x C-h, C-c C-h, ...) now opens a searchable
