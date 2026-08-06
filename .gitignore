@@ -4,6 +4,9 @@
 # Native binaries (pdf-tools / epdfinfo build output)
 pdf-tools-bin/
 
+# Vendored (non-MELPA) third-party lisp, cloned directly from upstream
+vendor/
+
 # Session/cache files
 auto-save-list/
 bookmarks

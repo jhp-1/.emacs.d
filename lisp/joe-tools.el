@@ -74,6 +74,11 @@
                "C:/msys64/mingw64/bin"
                "C:/Users/Joe/bin"))
     (add-to-list 'exec-path p t))
+  ;; SuperCollider: install dir is version-numbered (SuperCollider-4.x.y), so
+  ;; glob for it rather than hardcoding a version that goes stale on upgrade.
+  (let ((sc-dir (car (file-expand-wildcards "C:/Program Files/SuperCollider-*"))))
+    (when sc-dir
+      (add-to-list 'exec-path sc-dir t)))
   ;; Pipe performance: eliminate the ~50 ms per-read latency Emacs adds by
   ;; default on Windows.  This significantly speeds up magit, rg, notmuch and
   ;; any other subprocess-heavy workflow.
@@ -100,6 +105,36 @@
                        (format "$p=New-Object System.Media.SoundPlayer('%s');$p.PlaySync()" tmr-sound-file)))))
     ('gnu/linux
      (setq tmr-sound-file "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"))))
+
+;;;; SuperCollider (sclang)
+;; Editing + offline (NRT) rendering only, no live REPL -- scel's Windows
+;; support is unclear; revisit if we want real-time livecoding later.
+;; Not on MELPA or NonGNU ELPA (checked live against a refreshed archive,
+;; Aug 2026 -- neither "sclang" nor "scel" exist there), so this is vendored
+;; straight from the upstream repo instead of going through package.el:
+;;   git clone --depth 1 https://github.com/supercollider/scel .emacs.d/vendor/scel
+;; The sclang-vars.el.in template (CMake-substituted paths) is only needed
+;; when building alongside SuperCollider from source; sclang.el doesn't
+;; require it, so the plain clone works standalone.
+(defun joe/sclang-executable ()
+  "Path to sclang.exe, or nil if SuperCollider isn't installed."
+  (car (file-expand-wildcards "C:/Program Files/SuperCollider-*/sclang.exe")))
+
+(let ((scel-dir (expand-file-name "vendor/scel/el" user-emacs-directory)))
+  (when (file-directory-p scel-dir)
+    (add-to-list 'load-path scel-dir)
+    (require 'sclang)
+    (add-to-list 'auto-mode-alist '("\\.scd\\'" . sclang-mode))
+    (keymap-set sclang-mode-map "C-c C-c" #'compile)
+    ;; Absolute path, not bare "sclang" -- M-x compile shells out via cmd.exe,
+    ;; which resolves commands off the real Windows PATH, not Emacs exec-path.
+    (add-hook 'sclang-mode-hook
+              (lambda ()
+                (when-let ((exe (joe/sclang-executable)))
+                  (setq-local compile-command
+                              (format "%s %s"
+                                      (shell-quote-argument exe)
+                                      (shell-quote-argument (buffer-file-name)))))))))
 
 (provide 'joe-tools)
 ;;; joe-tools.el ends here

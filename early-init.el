@@ -7,6 +7,7 @@
 (setq inhibit-compacting-font-caches t)
 
 ;; Prevent the glimpse of un-styled Emacs by disabling these UI elements early.
+(setq load-prefer-newer t)
 (push '(menu-bar-lines . 0) default-frame-alist)
 (push '(tool-bar-lines . 0) default-frame-alist)
 (push '(vertical-scroll-bars) default-frame-alist)
