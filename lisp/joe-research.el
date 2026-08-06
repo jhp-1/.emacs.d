@@ -370,16 +370,17 @@ is how a whole batch import once sat untagged and unnoticed."
   :demand t)
 
 ;;;; buffer-to-pdf
-(use-package buffer-to-pdf
-  :ensure t
-  :init
-  ;; Then upgrade it with the command `package-vc-upgrade' or `package-vc-upgrade-all'.
-  (unless (package-installed-p 'buffer-to-pdf)
-    (package-vc-install "https://github.com/protesilaos/buffer-to-pdf.git"))
-  :config
-  ;; Configure `buffer-to-pdf-directory' to specify where PDF files are stored.
-  ;; This is the default value:
-  (setq buffer-to-pdf-directory (expand-file-name "~/Downloads/")))
+
+;; (use-package buffer-to-pdf
+;;   :ensure t
+;;   :init
+;;   ;; Then upgrade it with the command `package-vc-upgrade' or `package-vc-upgrade-all'.
+;;   (unless (package-installed-p 'buffer-to-pdf)
+;;     (package-vc-install "https://github.com/protesilaos/buffer-to-pdf.git"))
+;;   :config
+;;   ;; Configure `buffer-to-pdf-directory' to specify where PDF files are stored.
+;;   ;; This is the default value:
+;;   (setq buffer-to-pdf-directory (expand-file-name "~/Downloads/")))
 ;;;; Pdf metadata
 (defun joe/citar--files-by-citekey (citekey)
   "Find PDFs in `citar-library-paths' whose basename matches CITEKEY."
