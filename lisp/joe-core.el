@@ -218,6 +218,7 @@ Version: 2022-04-05"
       (funcall initial-major-mode)
       (setq joe/last-untitled-buffer xbuf)))
   joe/last-untitled-buffer)
+(keymap-global-set "C-c x" #'xah-new-empty-buffer)
 
 (setq initial-buffer-choice 'xah-new-empty-buffer)
 
