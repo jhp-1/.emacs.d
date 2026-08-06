@@ -158,8 +158,16 @@
       (when (facep face)
         (set-face-attribute face nil :underline nil :overline nil))))
 
-  (add-hook 'modus-themes-after-load-theme-hook #'joe/console-sync-default-face)
-  (add-hook 'modus-themes-after-load-theme-hook #'joe/console-flatten-mode-line)
+  ;; `enable-theme-functions' (Emacs 29+) rather than
+  ;; `modus-themes-after-load-theme-hook': modus does NOT advise `load-theme'
+  ;; (checked its source - the hook is only run from its own commands like
+  ;; modus-themes-toggle). Anything calling plain `load-theme' - the sunset
+  ;; timer below, `M-x load-theme', a future package - would otherwise switch
+  ;; the theme while silently skipping both fixes, leaving the TTY background
+  ;; stranded and the mode-line underline back. enable-theme-functions is run
+  ;; by the theme machinery itself for every activation, whoever triggered it.
+  (add-hook 'enable-theme-functions #'joe/console-sync-default-face)
+  (add-hook 'enable-theme-functions #'joe/console-flatten-mode-line)
   ;; Frames made later by emacsclient need it too: a theme loaded inside the
   ;; daemon before any frame existed does not reach them on its own.
   (add-hook 'server-after-make-frame-hook #'joe/console-sync-default-face)
@@ -175,7 +183,57 @@
   ;; full window width, so nothing needs filling.
   (setq-default mode-line-end-spaces "")
 
-  (load-theme 'modus-operandi t)
+  ;;;; Sunrise/sunset theme switching
+  ;; Replaces auto-dark on this box, which has no OS appearance setting to
+  ;; poll. Uses built-in solar.el rather than the `circadian' package - it is
+  ;; ~25 lines and avoids a dependency on a machine where installing things is
+  ;; deliberately awkward. Coordinates are approximate on purpose: 0.1 degree
+  ;; is well under a minute of error, and being 50km out moves sunrise by
+  ;; about two minutes.
+  (require 'solar)
+  (setq calendar-latitude 51.5
+        calendar-longitude -0.1
+        calendar-location-name "London")
+
+  (defun joe/console--solar-times ()
+    "Return (SUNRISE . SUNSET) today as float hours, or nil if unavailable.
+Polar day/night and other edge cases make `solar-sunrise-sunset' return a
+list without usable times; callers must handle nil."
+    (let* ((data (solar-sunrise-sunset (calendar-current-date)))
+           (rise (caar data))
+           (set (car (cadr data))))
+      (when (and (numberp rise) (numberp set))
+        (cons rise set))))
+
+  (defun joe/console-theme-for-now ()
+    "Return the theme appropriate to the current time of day."
+    (let ((times (joe/console--solar-times)))
+      (if (null times)
+          'modus-operandi          ; no sun data: default to light
+        (let* ((now (decode-time))
+               (hour (+ (nth 2 now) (/ (nth 1 now) 60.0))))
+          (if (and (>= hour (car times)) (< hour (cdr times)))
+              'modus-operandi
+            'modus-vivendi)))))
+
+  (defun joe/console-apply-solar-theme ()
+    "Load whichever theme suits the current time, if not already active."
+    (interactive)
+    (let ((want (joe/console-theme-for-now)))
+      (unless (memq want custom-enabled-themes)
+        ;; Disable the other one first, or its faces linger underneath and
+        ;; show through wherever the incoming theme does not override them.
+        (mapc #'disable-theme custom-enabled-themes)
+        (load-theme want t))))
+
+  ;; Re-evaluated hourly rather than scheduled precisely at each event: the
+  ;; times shift daily, the machine sleeps and wakes across boundaries, and a
+  ;; timer that fired while suspended is simply missed. Polling is a few
+  ;; microseconds and cannot drift out of step. Worst case the switch is up to
+  ;; an hour late; <f8> still overrides manually until the next check.
+  (run-at-time t 3600 #'joe/console-apply-solar-theme)
+
+  (joe/console-apply-solar-theme)
   (joe/console-sync-default-face)
   (joe/console-flatten-mode-line))
 
