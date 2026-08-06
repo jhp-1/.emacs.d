@@ -122,6 +122,14 @@
   :init
   (global-corfu-mode))
 
+;;;; corfu-terminal
+;; TTY child frames land in Emacs 31; on 30 in a console, the Corfu popup
+;; is inert without this.
+(unless (display-graphic-p)
+  (use-package corfu-terminal
+    :ensure t
+    :config (corfu-terminal-mode)))
+
 ;;;; cape -- extra completion-at-point functions
 (defun joe/cape-dict-setup ()
   "Add `cape-dict' to the local Capfs, for prose buffers."
@@ -177,9 +185,9 @@
 (use-package embark
   :ensure t
   :bind
-  ("C-." . embark-act)
-  ("C-;" . embark-dwim)                     ;; act with the default action
-  ("C-," . embark-collect)
+  ("C-c ." . embark-act)
+  ("C-c ;" . embark-dwim)                     ;; act with the default action
+  ("C-c ," . embark-collect)
   ("C-h B" . embark-bindings)               ;; search all active keybindings
   :init
   ;; C-h after a prefix key (C-x C-h, C-c C-h, ...) now opens a searchable

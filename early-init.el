@@ -27,5 +27,10 @@
 (setq native-comp-async-report-warnings-errors nil)
 (setq warning-suppress-types '((comp)))
 
+;; Locked appliance: /home is mounted noexec, so native-compiled .eln files
+;; cannot be dlopen'd from the user eln-cache. Run packages as byte-code.
+(setq native-comp-jit-compilation nil)
+(setq native-comp-enable-subr-trampolines nil)
+
 (provide 'early-init)
 ;;; early-init.el ends here
