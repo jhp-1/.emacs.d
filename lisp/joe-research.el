@@ -44,7 +44,25 @@
   :init
   (citar-denote-mode)
   :bind
-  ("C-c f n" . citar-create-note)
+  ;; `citar-open-notes', not `citar-create-note': it opens the existing note
+  ;; for an entry and creates one only when there is none, which is the thing
+  ;; you actually want nine times out of ten. Both branches route through
+  ;; citar-denote because `citar-notes-source' is set to it by
+  ;; citar-denote-mode above, so either way you end up with a Denote note.
+  ;;
+  ;; It behaves unambiguously because `citar-open-always-create-notes' is nil
+  ;; by default: an entry that has a note offers only that note, an entry
+  ;; without one offers only "create", so there is no extra prompt either way.
+  ;; Set that variable to t if you ever want a second note on the same entry.
+  ;;
+  ;; Not `citar-denote-open-note', which looks like the right command but
+  ;; filters its candidates through `citar-denote--has-notes' - entries with
+  ;; no note are never listed, so it can never create one despite passing
+  ;; :create-notes t internally.
+  ("C-c f n" . citar-open-notes)
+  ;; Kept reachable for the deliberate "make me another note for this entry"
+  ;; case, which citar-open-notes will not offer while a note exists.
+  ("C-c f N" . citar-create-note)
   ("C-c f r" . joe/insert-reading-list-entry))
 (use-package citar-embark
   :ensure t
