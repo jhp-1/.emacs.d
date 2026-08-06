@@ -14,10 +14,10 @@ Personal Emacs configuration.
     ├── joe-completion.el     # Vertico, Corfu, Cape, Consult, Embark
     ├── joe-files.el          # Dired, ibuffer, file management
     ├── joe-ui.el             # Themes, modeline, fonts, UI
-    ├── joe-org-notes.el      # Org, Denote, org-ql
+    ├── joe-org-notes.el      # Org, Denote, org-ql, capture templates,
+    │                         # career roadmap
     ├── joe-research.el       # Citar, PDF tools, bibliography
     ├── joe-counting-house.el # Counting House capture, menu, garden walk
-    ├── joe-career.el         # Career roadmap: capture, agenda, applications
     ├── joe-python.el         # Python / org-babel literate analysis
     ├── joe-elfeed.el         # Elfeed feeds + Karl-Voit-style tag vocabulary
     ├── joe-mail.el           # Notmuch, mu4e, msmtp
@@ -81,3 +81,21 @@ theme load, so a one-shot `set-face-attribute` is silently undone by `<f8>`.
 
 The system side (LUKS, the five sandboxing barriers, kmscon, Syncthing,
 key bindings) lives in that machine's `/etc/nixos/configuration.nix`, not here.
+
+## Conventions worth knowing
+
+**Capture templates guard on `org-capture`, never `org`.**
+`org-capture-templates` is a defcustom in `org-capture.el`, so loading `org`
+alone does not define it. Both places that add templates
+(`joe-org-notes.el`, `joe-counting-house.el`) use
+`(with-eval-after-load 'org-capture ...)`, with `joe-org-notes.el` doing the
+`setq` and everything else appending via `add-to-list`. Ordering then follows
+`init.el`'s require order rather than whichever feature loads first. Adding a
+template elsewhere under a different guard reintroduces an ordering bug that
+will look like a random `void-variable` or a silently missing template.
+
+**Deferred loading is by idle timer, not autoload.** `init.el` requires
+`joe-core` and `joe-completion` eagerly and everything else on 0.1s/0.5s/1s
+idle timers. A consequence worth remembering when debugging: immediately after
+a daemon restart, a module may genuinely not be loaded yet, so
+`emacsclient -e` can report state that looks wrong but isn't.
