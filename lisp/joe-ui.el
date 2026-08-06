@@ -20,8 +20,14 @@
 (setq visible-bell nil)
 
 ;;;; Pulsar
+;; Skipped on the console appliance. Pulsar technically works in a terminal -
+;; it is only face overlays, and kmscon gives truecolor - but a TTY has no
+;; sub-cell rendering, so the pulse paints a solid full-width bar out to the
+;; screen edge and reads as a flash rather than a fade. That is a property of
+;; the character grid, not something tuning the face or iterations fixes.
 (use-package pulsar
   :ensure t
+  :unless (bound-and-true-p joe/console-appliance-p)
   :defer t
   :config
   (setq pulsar-pulse t)
