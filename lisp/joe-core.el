@@ -13,6 +13,18 @@
 (setq use-package-always-ensure t)
 (setq use-package-always-demand nil)
 
+;; notmuch, pdf-tools and jinx are `:ensure nil' because on Nix hosts Emacs
+;; provides them itself (see joe/nix-emacs-p in early-init.el). On every other
+;; host they must still come from MELPA exactly as before — install them here so
+;; `:ensure nil' does not leave them missing. This mirrors the old `:ensure t'
+;; (which installs at config time regardless of :defer/:if), so behaviour on
+;; non-Nix hosts is unchanged.
+(unless (bound-and-true-p joe/nix-emacs-p)
+  (dolist (pkg '(notmuch pdf-tools jinx))
+    (unless (package-installed-p pkg)
+      (unless package-archive-contents (package-refresh-contents))
+      (package-install pkg))))
+
 ;; Disable automatic package refresh on startup
 (setq package-auto-update-interval 0)
 (setq package-check-update-on-load nil)

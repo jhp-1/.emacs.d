@@ -2,7 +2,7 @@
 
 ;;;; jinx
 (use-package jinx
-  :ensure t
+  :ensure nil
   :if (executable-find "aspell")
   :hook (org-mode . jinx-mode)
   :bind

@@ -41,5 +41,16 @@
   (setq native-comp-jit-compilation nil)
   (setq native-comp-enable-subr-trampolines nil))
 
+;; Hosts whose Emacs is built by Nix `emacsWithPackages'. On these, packages
+;; with native modules or a version-locked CLI — pdf-tools (epdfinfo), jinx
+;; (jinx-mod.so), notmuch (elisp must match the notmuch CLI) — are provided by
+;; Emacs itself and MUST be `:ensure nil', because MELPA cannot build the
+;; native parts here (and on the appliance they could not be dlopen'd from a
+;; noexec /home anyway). Pure-elisp packages are unaffected — they still come
+;; from MELPA on every host. See nixos/HANDOFF.md §7. Add other Nix hosts (e.g.
+;; the x270, once its Emacs is emacsWithPackages) to this list as they migrate.
+(defconst joe/nix-emacs-p (member (system-name) '("nixdesktop"))
+  "Non-nil on hosts where Emacs packages come from Nix `emacsWithPackages'.")
+
 (provide 'early-init)
 ;;; early-init.el ends here

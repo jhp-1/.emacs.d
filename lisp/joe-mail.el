@@ -39,10 +39,10 @@
 (setq sendmail-program
       (cond
        ((eq system-type 'windows-nt) "msmtp.cmd")
-       ((memq system-type '(gnu/linux darwin)) "/usr/bin/msmtp")))
+       ((memq system-type '(gnu/linux darwin)) "msmtp")))
 
 (use-package notmuch
-  :ensure t
+  :ensure nil
   :defer t
   :config
   (setq notmuch-show-logo nil)
