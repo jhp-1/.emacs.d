@@ -30,8 +30,8 @@
 (setq package-check-update-on-load nil)
 
 ;;;;; compile-angel
-;; Disabled outright on the appliance rather than tuned. Two distinct failures
-;; came from it there:
+;; Disabled outright on noexec-home hosts rather than tuned. Two distinct
+;; failures came from it on the x270:
 ;;   1. It calls native-compile EXPLICITLY, ignoring
 ;;      `native-comp-jit-compilation', so it emitted .eln files into a noexec
 ;;      /home that then could not be dlopen'd ("failed to map segment from
@@ -42,9 +42,14 @@
 ;;      breaking magit on every startup.
 ;; package.el already byte-compiles on install, so the value it adds here is
 ;; small and the failure modes are not. It stays fully enabled elsewhere.
+;;
+;; Gated on `joe/noexec-home-p', not on the appliance: failure 1 is a property
+;; of a noexec /home, so it applies verbatim to the nixdesktop. Note that
+;; setting `native-comp-jit-compilation' to nil does NOT cover this — the whole
+;; point of failure 1 is that compile-angel ignores that variable.
 (use-package compile-angel
   :ensure t
-  :unless (bound-and-true-p joe/console-appliance-p)
+  :unless (bound-and-true-p joe/noexec-home-p)
   :demand t
   :config
   (compile-angel-on-load-mode)
@@ -86,20 +91,30 @@ initial non-graphical frame.  Skips the update unless both are real colors."
 ;; that path does not exist, and `directory-files-recursively' on a missing
 ;; directory signals - which aborted org's whole :config block and left
 ;; `org-capture-templates' void, cascading into zotra/citar failures.
+;; The nixdesktop branch is the old Windows D: drive, carried over intact but
+;; mounted at /mnt/media rather than given a drive letter. Without it these fall
+;; through to the WSL default /mnt/d/... , which does not exist there — costing
+;; the agenda (the `file-directory-p' guard below catches that) and silently
+;; pointing `denote-directory' at a nonexistent tree (which it does not).
+;; Keyed on `joe/nix-emacs-p' the same way the appliance keys on its own
+;; constant: it identifies the machine, which is what actually decides the path.
 (defconst joe/notes-dir
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/notes"))
+        ((bound-and-true-p joe/nix-emacs-p) "/mnt/media/Notes")
         ((eq system-type 'windows-nt) "d:/Notes")
         (t "/mnt/d/Notes"))
   "Root directory for Denote notes.")
 
 (defconst joe/texts-dir
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/texts"))
+        ((bound-and-true-p joe/nix-emacs-p) "/mnt/media/Texts")
         ((eq system-type 'windows-nt) "d:/Texts")
         (t "/mnt/d/Texts"))
   "Root directory for PDFs and bibliography.")
 
 (defconst joe/noises-dir
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/noises"))
+        ((bound-and-true-p joe/nix-emacs-p) "/mnt/media/Noises")
         ((eq system-type 'windows-nt) "d:/Noises")
         (t "/mnt/d/Noises"))
   "Root directory for ambient/background sound files.")

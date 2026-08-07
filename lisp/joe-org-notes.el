@@ -12,10 +12,20 @@
   (:map org-mode-map
         ("M-$" . jinx-correct))
   :config
-  (setq jinx-languages "en_GB")   ; enchant here provides en_GB, not the en_US default
-  (add-to-list 'jinx-exclude-regexps '("@@.*?@@"))  ; Don't check spell in org @ macros
-  (add-to-list 'jinx-exclude-regexps '("~.*?~"))     ; Don't check spell in verbatim
-  (add-to-list 'jinx-exclude-regexps '("=.*?=")))    ; Don't check spell in code
+  (setq jinx-languages "en_GB"))  ; enchant here provides en_GB, not the en_US default
+
+;; Removed three `add-to-list' calls on `jinx-exclude-regexps' that pushed bare
+;; strings — '("@@.*?@@"), '("~.*?~"), '("=.*?=") — to skip org macros, verbatim
+;; and code. That variable is an alist keyed by MODE, `((MODE REGEXP...) ...)',
+;; so a string sat where a mode symbol belongs and jinx died with
+;; "Wrong type argument: symbolp, \"=.*?=\"" the moment it checked an org
+;; buffer, taking spell-checking out entirely.
+;; They are not worth repairing in place: `jinx-exclude-regexps' anchors at the
+;; START of a word, so by its own docstring it "cannot be used to exclude larger
+;; parts of a buffer" — it could never have skipped a =code= span. The
+;; region-based mechanism is `jinx-exclude-faces', whose default already lists
+;; org-code, org-verbatim, org-macro, org-block, org-link et al. for org-mode.
+;; So plain deletion both fixes the crash and gets the intended behaviour.
 
 ;;;; Org
 (use-package org
