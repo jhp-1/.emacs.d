@@ -254,6 +254,20 @@ list without usable times; callers must handle nil."
    ("C-c C-n" . outline-next-visible-heading)
    ("C-c C-p" . outline-previous-visible-heading)))
 
+;; C-<tab> cannot be typed in a terminal. Confirmed from `recent-keys' on the
+;; appliance: pressing Ctrl+Tab in kmscon delivers a bare TAB - the Control
+;; modifier is dropped before Emacs ever sees it - so the keypress ran
+;; `indent-for-tab-command' and folding appeared broken. The command itself is
+;; fine; only the binding was unreachable. Same class as the embark C-. / C-;
+;; / C-, chords rebound in joe-completion.el.
+;;
+;; C-c TAB keeps the muscle memory (still "control, then tab") while being
+;; expressible in a terminal, and C-c S-TAB mirrors org's whole-buffer cycle.
+;; The GUI keeps C-<tab> above, where it works.
+(when (bound-and-true-p joe/console-appliance-p)
+  (keymap-global-set "C-c TAB" #'outline-cycle)
+  (keymap-global-set "C-c <backtab>" #'outline-cycle-buffer))
+
 (defun joe/my-outline-hide-all ()
   "Hide all but the top-level headings in `outline-minor-mode`."
 (interactive)
