@@ -3,12 +3,16 @@
 ;;;; jinx
 (use-package jinx
   :ensure nil
-  :if (executable-find "aspell")
+  ;; jinx links libenchant, not aspell directly; on Nix the backend shows up as
+  ;; enchant-2, on the old Windows box as aspell. Accept either so spell-check
+  ;; activates on both without a per-host gate.
+  :if (or (executable-find "enchant-2") (executable-find "aspell"))
   :hook (org-mode . jinx-mode)
   :bind
   (:map org-mode-map
         ("M-$" . jinx-correct))
   :config
+  (setq jinx-languages "en_GB")   ; enchant here provides en_GB, not the en_US default
   (add-to-list 'jinx-exclude-regexps '("@@.*?@@"))  ; Don't check spell in org @ macros
   (add-to-list 'jinx-exclude-regexps '("~.*?~"))     ; Don't check spell in verbatim
   (add-to-list 'jinx-exclude-regexps '("=.*?=")))    ; Don't check spell in code

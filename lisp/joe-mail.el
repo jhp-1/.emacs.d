@@ -41,6 +41,14 @@
        ((eq system-type 'windows-nt) "msmtp.cmd")
        ((memq system-type '(gnu/linux darwin)) "msmtp")))
 
+;;;;; Credentials from pass, not plaintext ~/.authinfo
+;; Make the GPG-encrypted ~/.password-store a backend for auth-source, so
+;; mbsync/msmtp passwords and API keys (e.g. openrouter.ai) are read decrypted
+;; on demand. Harmless on hosts without a pass store — auth-source just falls
+;; through to its other sources.
+(require 'auth-source-pass)
+(auth-source-pass-enable)
+
 (use-package notmuch
   :ensure nil
   :defer t
