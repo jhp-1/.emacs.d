@@ -42,8 +42,9 @@
 ;; Emacs itself and MUST be `:ensure nil', because MELPA cannot build the
 ;; native parts here (and on the appliance they could not be dlopen'd from a
 ;; noexec /home anyway). Pure-elisp packages are unaffected — they still come
-;; from MELPA on every host. See nixos/HANDOFF.md §7. Add other Nix hosts (e.g.
-;; the x270, once its Emacs is emacsWithPackages) to this list as they migrate.
+;; from MELPA on every host. See ~/nixos-configs/x270-console-appliance/HANDOFF.md
+;; §7. Add other Nix hosts (e.g. the x270, once its Emacs is emacsWithPackages)
+;; to this list as they migrate.
 (defconst joe/nix-emacs-p (member (system-name) '("nixdesktop"))
   "Non-nil on hosts where Emacs packages come from Nix `emacsWithPackages'.")
 
