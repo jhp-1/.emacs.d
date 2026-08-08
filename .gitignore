@@ -1,5 +1,6 @@
 # Byte-compiled
 *.elc
+eln-cache/
 
 # Native binaries (pdf-tools / epdfinfo build output)
 pdf-tools-bin/
