@@ -91,23 +91,31 @@ initial non-graphical frame.  Skips the update unless both are real colors."
 ;; that path does not exist, and `directory-files-recursively' on a missing
 ;; directory signals - which aborted org's whole :config block and left
 ;; `org-capture-templates' void, cascading into zotra/citar failures.
-;; The nixdesktop branch is the old Windows D: drive, carried over intact but
-;; mounted at /mnt/media rather than given a drive letter. Without it these fall
-;; through to the WSL default /mnt/d/... , which does not exist there — costing
-;; the agenda (the `file-directory-p' guard below catches that) and silently
-;; pointing `denote-directory' at a nonexistent tree (which it does not).
+;; The nixdesktop branches are the old Windows D: drive, carried over intact but
+;; mounted at /mnt/media rather than given a drive letter. Without them these
+;; fall through to the WSL default /mnt/d/... , which does not exist there —
+;; costing the agenda (the `file-directory-p' guard below catches that) and
+;; silently pointing `denote-directory' at a nonexistent tree (which it does not).
 ;; Keyed on `joe/nix-emacs-p' the same way the appliance keys on its own
 ;; constant: it identifies the machine, which is what actually decides the path.
+;;
+;; Notes and Texts have since moved off that drive onto the encrypted SSD: they
+;; are small but latency-sensitive (org-agenda opens ~147 files at startup, and
+;; pdf-tools does random reads), and /mnt/media is a spinning disk mounted
+;; noexec with no POSIX permission bits — which also meant git could not track a
+;; mode on Notes. Syncthing follows them by folder ID, so its config was
+;; repointed rather than the files re-shared. Noises is bulk audio and stays put.
+;; Symlinks remain at the old /mnt/media paths, so a stale reference still works.
 (defconst joe/notes-dir
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/notes"))
-        ((bound-and-true-p joe/nix-emacs-p) "/mnt/media/Notes")
+        ((bound-and-true-p joe/nix-emacs-p) (expand-file-name "~/Notes"))
         ((eq system-type 'windows-nt) "d:/Notes")
         (t "/mnt/d/Notes"))
   "Root directory for Denote notes.")
 
 (defconst joe/texts-dir
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/texts"))
-        ((bound-and-true-p joe/nix-emacs-p) "/mnt/media/Texts")
+        ((bound-and-true-p joe/nix-emacs-p) (expand-file-name "~/Texts"))
         ((eq system-type 'windows-nt) "d:/Texts")
         (t "/mnt/d/Texts"))
   "Root directory for PDFs and bibliography.")
