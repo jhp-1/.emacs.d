@@ -21,6 +21,7 @@
 ;; declaration only quiets the byte-compiler, which matters on the Windows host
 ;; where compile-angel is enabled.
 (declare-function agent-shell-anthropic-make-authentication "agent-shell-anthropic")
+(declare-function agent-shell-make-environment-variables "agent-shell")
 
 ;;;; agent-shell
 ;; agent-shell talks to Claude through the ACP adapter, an npm package, NOT to
@@ -70,7 +71,23 @@
   (setq agent-shell-preferred-agent-config '(preselect . claude-code))
   (when (bound-and-true-p joe/noexec-home-p)
     (setq agent-shell-anthropic-claude-acp-command
-          (list "node" joe/claude-acp-program)))
+          (list "node" joe/claude-acp-program))
+    ;; Second, separate noexec casualty. The adapter does not drive the `claude'
+    ;; on PATH: it bundles its own copy of the CLI, as a platform binary under
+    ;; node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude, and spawns
+    ;; that. Which lands in /home, so it cannot be exec'd here — `session/new'
+    ;; fails with "exists but failed to launch". The adapter's own diagnostic
+    ;; blames a musl/glibc mismatch; that is a plausible guess in general and
+    ;; the wrong one here, so do not go chasing loaders.
+    ;;
+    ;; CLAUDE_CODE_EXECUTABLE takes precedence over the bundled binary, so point
+    ;; it at the Nix one — in the store, so executable, and the version we
+    ;; actually keep updated. Resolved via `executable-find' rather than
+    ;; hardcoded, since the store path changes on every rebuild.
+    (when-let* ((claude (executable-find "claude")))
+      (setq agent-shell-anthropic-claude-environment
+            (agent-shell-make-environment-variables
+             "CLAUDE_CODE_EXECUTABLE" claude))))
   :bind
   ;; `C-c a' is org-agenda and `C-c s' is ghostel on Windows; `C-c z' is the
   ;; nearest free key, and matches the C-c z-as-REPL-toggle convention.
