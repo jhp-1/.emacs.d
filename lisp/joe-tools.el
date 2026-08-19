@@ -109,4 +109,7 @@
      (setq tmr-sound-file "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"))))
 
 (provide 'joe-tools)
+;;;; bluetooth
+(use-package bluetooth
+  :ensure t)
 ;;; joe-tools.el ends here
