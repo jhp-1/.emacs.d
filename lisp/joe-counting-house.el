@@ -127,19 +127,29 @@ citar-denote note with the usual de-duplication, so re-running is safe."
   (require 'cl-lib)
   (let ((cutoff (time-subtract nil (days-to-time days)))
         (started 0)
+        (stale 0)
         (unknown '()))
     (dolist (pdf (directory-files (expand-file-name joe/texts-dir) t "\\.pdf\\'"))
-      (when (and (time-less-p cutoff
-                              (file-attribute-modification-time (file-attributes pdf)))
-                 (joe/ch--pdf-annotated-p pdf))
-        (let ((citekey (file-name-base pdf)))
-          (if (citar-get-entry citekey)
-              (progn
-                (joe/--run-pdfannots-async pdf (joe/ch--ensure-note-buffer citekey))
-                (cl-incf started))
-            (push (file-name-nondirectory pdf) unknown)))))
-    (message "Harvest: %d import%s started%s"
+      ;; Cheap mtime test first: the byte scan below reads the whole file, and
+      ;; the library is thousands of PDFs / several GB.
+      (if (not (time-less-p cutoff
+                            (file-attribute-modification-time (file-attributes pdf))))
+          (cl-incf stale)
+        (when (joe/ch--pdf-annotated-p pdf)
+          (let ((citekey (file-name-base pdf)))
+            (if (citar-get-entry citekey)
+                (progn
+                  (joe/--run-pdfannots-async pdf (joe/ch--ensure-note-buffer citekey))
+                  (cl-incf started))
+              (push (file-name-nondirectory pdf) unknown))))))
+    (message "Harvest: %d import%s started%s%s"
              started (if (= started 1) "" "s")
+             ;; A run that starts nothing is almost always the date window, not a
+             ;; broken importer.  Say so rather than reporting a bare zero.
+             (if (and (= started 0) (> stale 0))
+                 (format "; %d PDF%s not modified within %d day%s (C-u to widen)"
+                         stale (if (= stale 1) "" "s") days (if (= days 1) "" "s"))
+               "")
              (if unknown
                  (format "; skipped (no citekey): %s" (string-join unknown ", "))
                ""))))

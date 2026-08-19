@@ -46,6 +46,7 @@
 (run-with-idle-timer 1 nil
                      (lambda ()
                        (require 'joe-tools)
+                       (require 'joe-ai)
                        (require 'joe-elfeed)
                        (require 'joe-media)))
 

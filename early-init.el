@@ -36,7 +36,32 @@
 (defconst joe/console-appliance-p (string= (system-name) "x270")
   "Non-nil on the x270 console appliance (noexec /home, no window system).")
 
-(when joe/console-appliance-p
+;; Hosts whose Emacs is built by Nix `emacsWithPackages'. On these, packages
+;; with native modules or a version-locked CLI — pdf-tools (epdfinfo), jinx
+;; (jinx-mod.so), notmuch (elisp must match the notmuch CLI) — are provided by
+;; Emacs itself and MUST be `:ensure nil', because MELPA cannot build the
+;; native parts here (and on the appliance they could not be dlopen'd from a
+;; noexec /home anyway). Pure-elisp packages are unaffected — they still come
+;; from MELPA on every host. See ~/nixos-configs/x270-console-appliance/HANDOFF.md
+;; §7. Add other Nix hosts (e.g. the x270, once its Emacs is emacsWithPackages)
+;; to this list as they migrate.
+(defconst joe/nix-emacs-p (member (system-name) '("nixdesktop"))
+  "Non-nil on hosts where Emacs packages come from Nix `emacsWithPackages'.")
+
+;; Hosts whose /home is mounted noexec. There, Emacs may not dlopen anything it
+;; writes into ~/.emacs.d/eln-cache: the load fails with "failed to map segment
+;; from shared object". Interactively that is a message; in the daemon it aborts
+;; startup (status=255/EXCEPTION), and systemd then hits its restart limit and
+;; gives up, so you get no daemon at all. Emacs's own AOT .eln — and on Nix
+;; those of `emacsWithPackages' — live in the read-only store, which IS
+;; executable, so they keep working; only JIT output is a problem. Turning JIT
+;; off costs some speed and nothing else.
+;; Kept separate from `joe/console-appliance-p': that gate is about having no
+;; GUI, and the two happen to coincide on the x270 but not elsewhere.
+(defconst joe/noexec-home-p (or joe/console-appliance-p joe/nix-emacs-p)
+  "Non-nil where $HOME is noexec, so .eln in the user eln-cache cannot load.")
+
+(when joe/noexec-home-p
   ;; Run packages as byte-code; .elc is interpreted, .eln would be dlopen'd.
   (setq native-comp-jit-compilation nil)
   (setq native-comp-enable-subr-trampolines nil))

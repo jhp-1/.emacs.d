@@ -340,7 +340,7 @@ is how a whole batch import once sat untagged and unnoticed."
 ;;;;; pdf-tools
 (use-package pdf-tools
   :unless (bound-and-true-p joe/console-appliance-p)
-  :ensure t
+  :ensure nil
   :demand t
   :pin melpa
   :mode ("\\.pdf\\'" . pdf-view-mode)

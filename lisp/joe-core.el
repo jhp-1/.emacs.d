@@ -13,13 +13,25 @@
 (setq use-package-always-ensure t)
 (setq use-package-always-demand nil)
 
+;; notmuch, pdf-tools and jinx are `:ensure nil' because on Nix hosts Emacs
+;; provides them itself (see joe/nix-emacs-p in early-init.el). On every other
+;; host they must still come from MELPA exactly as before — install them here so
+;; `:ensure nil' does not leave them missing. This mirrors the old `:ensure t'
+;; (which installs at config time regardless of :defer/:if), so behaviour on
+;; non-Nix hosts is unchanged.
+(unless (bound-and-true-p joe/nix-emacs-p)
+  (dolist (pkg '(notmuch pdf-tools jinx))
+    (unless (package-installed-p pkg)
+      (unless package-archive-contents (package-refresh-contents))
+      (package-install pkg))))
+
 ;; Disable automatic package refresh on startup
 (setq package-auto-update-interval 0)
 (setq package-check-update-on-load nil)
 
 ;;;;; compile-angel
-;; Disabled outright on the appliance rather than tuned. Two distinct failures
-;; came from it there:
+;; Disabled outright on noexec-home hosts rather than tuned. Two distinct
+;; failures came from it on the x270:
 ;;   1. It calls native-compile EXPLICITLY, ignoring
 ;;      `native-comp-jit-compilation', so it emitted .eln files into a noexec
 ;;      /home that then could not be dlopen'd ("failed to map segment from
@@ -30,9 +42,14 @@
 ;;      breaking magit on every startup.
 ;; package.el already byte-compiles on install, so the value it adds here is
 ;; small and the failure modes are not. It stays fully enabled elsewhere.
+;;
+;; Gated on `joe/noexec-home-p', not on the appliance: failure 1 is a property
+;; of a noexec /home, so it applies verbatim to the nixdesktop. Note that
+;; setting `native-comp-jit-compilation' to nil does NOT cover this — the whole
+;; point of failure 1 is that compile-angel ignores that variable.
 (use-package compile-angel
   :ensure t
-  :unless (bound-and-true-p joe/console-appliance-p)
+  :unless (bound-and-true-p joe/noexec-home-p)
   :demand t
   :config
   (compile-angel-on-load-mode)
@@ -74,20 +91,38 @@ initial non-graphical frame.  Skips the update unless both are real colors."
 ;; that path does not exist, and `directory-files-recursively' on a missing
 ;; directory signals - which aborted org's whole :config block and left
 ;; `org-capture-templates' void, cascading into zotra/citar failures.
+;; The nixdesktop branches are the old Windows D: drive, carried over intact but
+;; mounted at /mnt/media rather than given a drive letter. Without them these
+;; fall through to the WSL default /mnt/d/... , which does not exist there —
+;; costing the agenda (the `file-directory-p' guard below catches that) and
+;; silently pointing `denote-directory' at a nonexistent tree (which it does not).
+;; Keyed on `joe/nix-emacs-p' the same way the appliance keys on its own
+;; constant: it identifies the machine, which is what actually decides the path.
+;;
+;; Notes and Texts have since moved off that drive onto the encrypted SSD: they
+;; are small but latency-sensitive (org-agenda opens ~147 files at startup, and
+;; pdf-tools does random reads), and /mnt/media is a spinning disk mounted
+;; noexec with no POSIX permission bits — which also meant git could not track a
+;; mode on Notes. Syncthing follows them by folder ID, so its config was
+;; repointed rather than the files re-shared. Noises is bulk audio and stays put.
+;; Symlinks remain at the old /mnt/media paths, so a stale reference still works.
 (defconst joe/notes-dir
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/notes"))
+        ((bound-and-true-p joe/nix-emacs-p) (expand-file-name "~/Notes"))
         ((eq system-type 'windows-nt) "d:/Notes")
         (t "/mnt/d/Notes"))
   "Root directory for Denote notes.")
 
 (defconst joe/texts-dir
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/texts"))
+        ((bound-and-true-p joe/nix-emacs-p) (expand-file-name "~/Texts"))
         ((eq system-type 'windows-nt) "d:/Texts")
         (t "/mnt/d/Texts"))
   "Root directory for PDFs and bibliography.")
 
 (defconst joe/noises-dir
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/noises"))
+        ((bound-and-true-p joe/nix-emacs-p) "/mnt/media/Noises")
         ((eq system-type 'windows-nt) "d:/Noises")
         (t "/mnt/d/Noises"))
   "Root directory for ambient/background sound files.")
