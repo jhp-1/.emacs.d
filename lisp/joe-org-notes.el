@@ -42,6 +42,7 @@
   (setq org-use-speed-commands t)
   (setq org-goto-max-level 3)
   (setq org-hide-block-startup t)
+  (setq org-directory joe/notes-dir)
   ;; Use joe/notes-dir so this works from both Windows and WSL Emacs.
 ;; Guarded: `directory-files-recursively' signals if the directory is absent,
 ;; and because this sits inside org's :config that would abort the entire
