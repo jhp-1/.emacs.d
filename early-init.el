@@ -24,6 +24,15 @@
 (when (fboundp 'x-apply-session-resources)
   (advice-add #'x-apply-session-resources :override #'ignore))
 
+;; Collapse every installed package's autoloads into one big file that Emacs
+;; loads instead of visiting each package directory in turn. This MUST be set
+;; here: `package-activate-all' consults it, and that runs before init.el is
+;; read, so the copy that used to live in joe-core.el was evaluated long after
+;; the only moment it could have mattered (and the quickstart file was
+;; consequently never even generated). Regenerate by hand after editing
+;; package state outside Emacs: M-x package-quickstart-refresh.
+(setq package-quickstart t)
+
 ;; native-comp: reduce verbosity
 (setq native-comp-async-report-warnings-errors nil)
 (setq warning-suppress-types '((comp)))
