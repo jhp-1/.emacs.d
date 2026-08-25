@@ -23,7 +23,7 @@
 ;; They are not worth repairing in place: `jinx-exclude-regexps' anchors at the
 ;; START of a word, so by its own docstring it "cannot be used to exclude larger
 ;; parts of a buffer" — it could never have skipped a =code= span. The
-;; region-based mechanism is `jinx-exclude-faces', whose default already lists
+;; region-based mechanism is `jinx-exclude-faces', whose default Salready lists
 ;; org-code, org-verbatim, org-macro, org-block, org-link et al. for org-mode.
 ;; So plain deletion both fixes the crash and gets the intended behaviour.
 
@@ -156,6 +156,8 @@ Lives in the `career/' project silo (git repo), not the notes root.")
   (setq denote-excluded-directories-regexp nil)
   (setq denote-excluded-keywords-regexp nil)
   (setq denote-known-keywords '("people" "methods" "entities" "concepts" "material" "events" "personal"))
+  (setq denote-rename-buffer-format "%>60t")
+  (setq denote-buffer-name-prefix "<Denote> ")
   :bind
   ( :map global-map
     ("C-c n n" . denote-open-or-create)
