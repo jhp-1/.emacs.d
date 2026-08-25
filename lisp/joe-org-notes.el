@@ -165,6 +165,33 @@ Lives in the `career/' project silo (git repo), not the notes root.")
 
 (add-hook 'dired-mode-hook #'denote-dired-mode-in-directories)
 
+;;;;; denote-org
+;; Denote's Org dynamic blocks live in their own package as of Denote 4 --
+;; plain `denote' gives you links and backlinks written as static text, but
+;; not the blocks that re-derive their contents on update. Without this
+;; package `C-c C-x C-u' on a `#+begin: denote-links' block fails outright,
+;; because `org-dblock-write:denote-links' is simply not defined.
+;;
+;; No explicit `require' is needed for updating: the `org-dblock-write:denote-*'
+;; writers are autoloaded, so refreshing a block in a file you have just opened
+;; pulls the package in on its own. The bindings below are only for authoring
+;; new blocks.
+;;
+;; Not bound: `denote-org-dblock-insert-sequence', which is defined inside a
+;; `with-eval-after-load' on the separate `denote-sequence' package and so does
+;; not exist here. It indexes notes by signature, and `denote-prompts' above
+;; asks only for title and keywords, so nothing in this setup carries one.
+(use-package denote-org
+  :ensure t
+  :after (denote org)
+  :bind
+  ( :map org-mode-map
+    ("C-c n d l" . denote-org-dblock-insert-links)
+    ("C-c n d b" . denote-org-dblock-insert-backlinks)
+    ("C-c n d f" . denote-org-dblock-insert-files)
+    ("C-c n d h" . denote-org-dblock-insert-files-as-headings)
+    ("C-c n d m" . denote-org-dblock-insert-missing-links)))
+
 ;;;;; denote-journal
 (use-package denote-journal
   :ensure t

@@ -5,7 +5,10 @@
 (setq package-check-signature nil)
 (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/"))
 (add-to-list 'package-archives '("nongnu" . "https://elpa.nongnu.org/nongnu/"))
-(package-initialize)
+;; No `package-initialize' call: since Emacs 27 `package-activate-all' runs
+;; automatically before init.el (`package-enable-at-startup' is left at t), so
+;; an explicit call here activated every package a second time. The archives
+;; above do not need it — they are only consulted when installing or refreshing.
 
 ;;;; Use-package
 (require 'use-package)
@@ -54,6 +57,87 @@
   :config
   (compile-angel-on-load-mode)
   (add-hook 'emacs-lisp-mode-hook #'compile-angel-on-save-local-mode))
+
+;;;;; Byte-compile packages out of process
+;; `package--compile' runs `byte-recompile-directory' inside the *running*
+;; Emacs. Macros are expanded at compile time from whatever is already resident
+;; in that image, and `require' is a no-op once a feature is loaded —
+;; `package-activate-1' reloads only the package being installed, never the
+;; dependencies it is about to be compiled against. So upgrading a package
+;; together with a dependency whose macros it uses compiles it against the OLD
+;; macros.
+;;
+;; Not hypothetical. magit and cond-let were upgraded in one session on
+;; 2026-08-08, and magit-git.elc came out with `cond-let--thread$' emitted as a
+;; FUNCTION call, leaving `$' as a free variable reference, because the cond-let
+;; resident in that Emacs predated that macro. Every `magit-status' then died
+;; with "void-variable $" inside `magit-config-get-from-cached-list', five
+;; frames down in the status headers.
+;;
+;; Nothing self-heals from this. The .elc is newer than its .el, so
+;; `load-prefer-newer' sees nothing wrong, and restarting cannot help — the bad
+;; expansion is baked into the file. Only a forced recompile fixes it, which is
+;; what `joe/recompile-package' below is for.
+;;
+;; Compiling in a fresh `emacs -Q --batch' removes the class outright: the
+;; subprocess loads exactly the versions that are on disk now. This is the same
+;; reasoning behind the `subemacs' package and behind auto-compile's warning
+;; that in-process compilation hides dependency problems.
+(defun joe/byte-compile-package-cleanly (dir &optional ignore-regexps)
+  "Byte-compile every library under DIR in a clean Emacs subprocess.
+IGNORE-REGEXPS is bound to `byte-compile-ignore-files' there, so
+.elpaignore is still honoured. Return non-nil if the subprocess ran and
+exited successfully."
+  (let ((emacs (expand-file-name invocation-name invocation-directory)))
+    (and
+     (file-executable-p emacs)
+     (eq 0 (call-process
+            emacs nil (get-buffer-create "*package-compile*") nil
+            "-Q" "--batch" "--eval"
+            (prin1-to-string
+             `(progn
+                ;; Byte-compilation only. `-Q' skips early-init.el, so the
+                ;; native-comp guards there are absent, and a JIT .eln would
+                ;; land in an eln-cache that a noexec /home cannot dlopen from
+                ;; — the exact x270 failure documented above.
+                (setq native-comp-jit-compilation nil
+                      native-comp-enable-subr-trampolines nil)
+                (require 'package)
+                ;; A stale quickstart file would defeat the whole point.
+                (setq package-user-dir ,package-user-dir
+                      package-quickstart nil)
+                (package-activate-all)
+                (let ((byte-compile-ignore-files ',ignore-regexps))
+                  (byte-recompile-directory ,dir 0 t)))))))))
+
+(defun joe/package--compile-cleanly (fn pkg-desc)
+  "Compile PKG-DESC out of process, falling back to FN.
+Intended as :around advice for `package--compile'."
+  (let ((dir (package-desc-dir pkg-desc)))
+    (unless (and (stringp dir)
+                 (file-directory-p dir)
+                 (joe/byte-compile-package-cleanly
+                  dir (package--parse-elpaignore pkg-desc)))
+      (funcall fn pkg-desc))))
+
+(advice-add 'package--compile :around #'joe/package--compile-cleanly)
+
+(defun joe/recompile-package (name)
+  "Force a clean recompile of the installed package NAME.
+Repairs a package whose .elc was compiled against stale macros. The
+symptom is a `void-variable' or `void-function' error naming a macro (or
+a macro's anaphoric variable, such as cond-let's `$') from one of its
+dependencies, raised from a package that is otherwise up to date."
+  (interactive
+   (list (intern (completing-read "Recompile package: "
+                                  (mapcar #'car package-alist) nil t))))
+  (let ((desc (car (alist-get name package-alist))))
+    (unless desc
+      (user-error "Package `%s' is not installed" name))
+    (if (joe/byte-compile-package-cleanly
+         (package-desc-dir desc) (package--parse-elpaignore desc))
+        (message "Recompiled %s — restart Emacs to load the new byte code" name)
+      (user-error "Could not compile `%s' out of process" name))))
 
 ;; The notes silo ships a .dir-locals.el with two `eval' forms, so Emacs
 ;; prompts about unsafe local variables on every org file it opens. These were
@@ -195,7 +279,10 @@ initial non-graphical frame.  Skips the update unless both are real colors."
   (recentf-filename-handlers '(abbreviate-file-name))
   (recentf-max-saved-items 400)
   (recentf-max-menu-items 400)
-  (recentf-save-file "~/.emacs.d/recentf"))
+  ;; Not a literal "~/.emacs.d/recentf": joe-tools.el resets HOME on Windows,
+  ;; and this file is loaded first, so the tilde would expand against the old
+  ;; HOME and strand the history somewhere else.
+  (recentf-save-file (locate-user-emacs-file "recentf")))
 
 ;;;; Global keybindings and miscellaneous settings
 (keymap-global-set "<f7>" (lambda ()
@@ -206,9 +293,12 @@ initial non-graphical frame.  Skips the update unless both are real colors."
 (put 'narrow-to-region 'disabled nil)
 (put 'downcase-region 'disabled nil)
 
-(setq use-package-compute-statistics t)
 (delete-selection-mode 1)
-(setq package-quickstart t)
+;; `use-package-compute-statistics' used to be set here and
+;; `package-quickstart' too. The first wraps every use-package form in timing
+;; instrumentation and is only wanted while actually reading
+;; `use-package-report'; the second now lives in early-init.el, which is the
+;; only place it takes effect.
 
 ;;;; rainbow-delimiters
 (use-package rainbow-delimiters
@@ -256,6 +346,24 @@ Version: 2022-04-05"
 (keymap-global-set "C-c x" #'xah-new-empty-buffer)
 
 (setq initial-buffer-choice 'xah-new-empty-buffer)
+
+;;;; Jump to this configuration
+;; `C-c e' is eww (joe-tools.el), so the config lands on the shifted key.
+;; Goes through `completing-read' rather than opening a fixed file, so vertico
+;; and orderless do the narrowing: "mail" reaches joe-mail.el in four keys.
+(defun joe/find-config-file ()
+  "Open one of this configuration's own files, chosen by name."
+  (interactive)
+  (let* ((files (append (list (locate-user-emacs-file "init.el")
+                              (locate-user-emacs-file "early-init.el"))
+                        (directory-files (locate-user-emacs-file "lisp")
+                                         t "\\.el\\'")))
+         (alist (mapcar (lambda (f) (cons (file-name-nondirectory f) f))
+                        (seq-filter #'file-exists-p files))))
+    (find-file (cdr (assoc (completing-read "Config file: " alist nil t)
+                           alist)))))
+
+(keymap-global-set "C-c E" #'joe/find-config-file)
 
 ;;;; helpful
 (use-package helpful

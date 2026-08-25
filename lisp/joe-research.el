@@ -568,8 +568,40 @@ Works from Dired buffer with DOI in filename."
   (define-key dired-mode-map (kbd "C-c d") 'my/import-and-link-by-doi-from-filename))
 
 ;;;; PDF annotation import
-(defconst joe/pdfannots-script
-  (expand-file-name "~/.local/share/pdfannots/pdfannots.py"))
+;; pdfannots is the jhp-1 fork (org output, `-f org' by default), vendored
+;; alongside a pure-Python pdfminer.six under `joe/pdfannots-vendor-dir'
+;; rather than installed: this box has no pip, and the nix daemon refuses
+;; connections, so neither `pip install' nor `nix-shell' is available.
+;;
+;; pdfminer.six hard-imports `cryptography', which is a compiled extension and
+;; so cannot live under /home - that mount is noexec, and dlopen of a .so on a
+;; noexec mount fails. Both it and its own `cffi' dependency are therefore
+;; borrowed from /nix/store, which is exec-mounted, and located by glob so a
+;; rebuild that changes the store hash does not break this.
+(defconst joe/pdfannots-vendor-dir
+  (expand-file-name "~/.local/share/pdfannots/vendor")
+  "Directory holding the vendored pdfannots fork and pdfminer.six.")
+
+(defun joe/--pdfannots-store-dep (marker)
+  "Return a /nix/store site-packages directory containing MARKER, or nil.
+MARKER is a wildcard matched against the contents of each candidate."
+  (seq-find
+   (lambda (dir) (file-expand-wildcards (expand-file-name marker dir)))
+   (file-expand-wildcards "/nix/store/*/lib/python3*/site-packages")))
+
+(defvar joe/--pdfannots-pythonpath nil
+  "Cached PYTHONPATH for pdfannots; the store scan is slow enough to memoise.")
+
+(defun joe/--pdfannots-pythonpath ()
+  "Return the PYTHONPATH that makes `python3 -m pdfannots' importable."
+  (or joe/--pdfannots-pythonpath
+      (setq joe/--pdfannots-pythonpath
+            (mapconcat
+             #'identity
+             (delq nil (list joe/pdfannots-vendor-dir
+                             (joe/--pdfannots-store-dep "cryptography/__init__.py")
+                             (joe/--pdfannots-store-dep "_cffi_backend*.so")))
+             path-separator))))
 
 (defun joe/--demote-headings (text)
   "Demote all org headings in TEXT by one level."
@@ -658,12 +690,17 @@ Works from Dired buffer with DOI in filename."
           (unless (string-suffix-p "\n" demoted) (insert "\n"))
           (setq added (length page-blocks))))
       (save-buffer))
-    (message "Added %d new annotation%s" added (if (= added 1) "" "s"))))
+    (message "Added %d new annotation%s" added (if (= added 1) "" "s"))
+    ;; Returned, not just messaged, so the batch driver below can total it up.
+    added))
 
 (defun joe/--pdfannots-command (pdf-path)
   "Return the command list to invoke pdfannots on PDF-PATH.
-pdfannots runs as a native Python package on all platforms now."
-  (list "pdfannots" "--no-group" pdf-path))
+Invoked as `python3 -m pdfannots' rather than via the `pdfannots' console
+script: that script would have to live under /home, which is mounted noexec,
+so it could never be executed directly."
+  (list "env" (concat "PYTHONPATH=" (joe/--pdfannots-pythonpath))
+        "python3" "-m" "pdfannots" "--no-group" "-f" "org" pdf-path))
 
 (defun joe/--run-pdfannots-async (pdf-path target-buf)
   "Run pdfannots on PDF-PATH and merge into TARGET-BUF when done."
@@ -711,6 +748,239 @@ pdfannots runs as a native Python package on all platforms now."
     (joe/--run-pdfannots-async pdf (current-buffer))))
 
 (keymap-global-set "C-c f h" #'joe/import-pdf-annotations)
+
+;;;;; Batch annotation import
+;; `joe/import-pdf-annotations' handles one entry at a time, interactively.
+;; The driver below sweeps the whole library in one pass.
+;;
+;; It deliberately does not just run pdfannots over every PDF. pdfannots lays
+;; out the full text of a document before it can report anything, which costs
+;; seconds per file and would run into hours across a thousand-volume library
+;; -- nearly all of it spent proving that unannotated PDFs are unannotated.
+;; `joe/pdfannots-scan-script' reads only the page and annotation dictionaries,
+;; so the expensive tool is only ever pointed at PDFs known to carry marks.
+
+(defconst joe/pdfannots-scan-script
+  (expand-file-name "~/.local/share/pdfannots/scan_annots.py")
+  "Pre-filter reporting which PDFs carry highlight-like annotations.")
+
+(defconst joe/pdfannots-scan-cache
+  (expand-file-name "~/.local/share/pdfannots/scan-cache.tsv")
+  "Cached output of `joe/pdfannots-scan-script'.
+The pre-filter opens every PDF in the library, which takes on the order of
+twenty minutes, so its verdict is kept on disk between runs.  Refresh it with
+`joe/rescan-annotated-pdfs' after adding annotated PDFs to the library.")
+
+(defun joe/rescan-annotated-pdfs (&optional dir)
+  "Rebuild `joe/pdfannots-scan-cache' for DIR, asynchronously.
+DIR defaults to the first of `citar-library-paths'.  Runs out of process
+because the scan takes far too long to block Emacs on."
+  (interactive)
+  (let* ((dir (or dir (car citar-library-paths)))
+         (buf (generate-new-buffer " *pdfannots-scan*")))
+    (make-process
+     :name "pdfannots-scan"
+     :buffer buf
+     :command (list "env" (concat "PYTHONPATH=" (joe/--pdfannots-pythonpath))
+                    "python3" joe/pdfannots-scan-script (expand-file-name dir))
+     :sentinel
+     (lambda (proc _event)
+       (when (eq (process-status proc) 'exit)
+         (with-current-buffer buf
+           (write-region (point-min) (point-max) joe/pdfannots-scan-cache nil 'quiet))
+         (kill-buffer buf)
+         (message "Annotation scan cache rebuilt: %s" joe/pdfannots-scan-cache))))
+    (message "Scanning %s in the background; this takes a while…" dir)))
+
+(defun joe/--annotated-pdfs (dir)
+  "Return (HITS . ERRORS) for the PDFs directly under DIR.
+HITS are absolute paths to PDFs carrying highlight-like annotations. ERRORS
+are (BASENAME . REASON) pairs for PDFs the pre-filter could not parse; they
+are reported rather than dropped, because a file that cannot be scanned is
+not the same as a file with no highlights.
+
+Reads `joe/pdfannots-scan-cache'; run `joe/rescan-annotated-pdfs' to refresh."
+  (unless (file-exists-p joe/pdfannots-scan-cache)
+    (user-error "No annotation scan cache; run `joe/rescan-annotated-pdfs' first"))
+  (with-temp-buffer
+    (insert-file-contents joe/pdfannots-scan-cache)
+    (goto-char (point-min))
+    (let (files errors)
+      (while (re-search-forward "^\\(HIT\\|ERROR\\)\t\\([^\t\n]+\\)\t\\([^\n]*\\)$" nil t)
+        (if (equal (match-string 1) "HIT")
+            (push (expand-file-name (match-string 2) dir) files)
+          (push (cons (match-string 2)
+                      (concat "unreadable by pdfminer — " (match-string 3)))
+                errors)))
+      (cons (nreverse files) (nreverse errors)))))
+
+(defun joe/--pdf-basename->citekey ()
+  "Return a hash table mapping downcased PDF basename to citekey.
+Covers both routes a PDF can be claimed by an entry: the bib `file' field,
+which holds bare basenames separated by `;', and the `<citekey>.pdf' naming
+convention that `joe/citar--files-by-citekey' relies on."
+  (let ((table (make-hash-table :test #'equal)))
+    (dolist (citekey (hash-table-keys (citar-get-entries)))
+      (when-let* ((field (citar-get-value "file" citekey)))
+        (dolist (path (split-string field ";" t "[[:space:]]*"))
+          (puthash (downcase (file-name-nondirectory path)) citekey table)))
+      (puthash (downcase (concat citekey ".pdf")) citekey table))
+    table))
+
+(defun joe/--create-citar-note (citekey)
+  "Create a citar-denote note for CITEKEY without prompting, and return its file.
+
+`citar-denote--create-note' cannot be driven unattended.  It always prompts
+for a title through `read-string', and when `citar-denote-open-attachment' is
+non-nil it signs off by opening the entry's PDF in another window -- which
+leaves a read-only pdf-view buffer current, not the note.  Both are fine for
+a single interactive capture and fatal for a sweep of the whole library.
+
+This reproduces the parts that matter, taking the title and keywords that
+command would have offered as defaults."
+  (let ((title (or (citar-denote--generate-title citekey) citekey))
+        ;; `citar-denote--keywords-prompt' only avoids the minibuffer while
+        ;; `citar-denote-use-bib-keywords' is non-nil; bind it so a batch run
+        ;; cannot block on a completing-read if that setting ever changes.
+        (citar-denote-use-bib-keywords t))
+    (denote title
+            (citar-denote--keywords-prompt citekey)
+            citar-denote-file-type)
+    ;; `denote' leaves the new note current, so the reference line lands in it.
+    (citar-denote--add-new-reference-line (list citekey) citar-denote-file-type)
+    (save-buffer)
+    (buffer-file-name)))
+
+(defun joe/--note-for-citekey (citekey)
+  "Return the citar-denote note file for CITEKEY, creating it if absent."
+  (or (car (gethash citekey (citar-denote--get-notes (list citekey))))
+      (save-window-excursion (joe/--create-citar-note citekey))))
+
+;; The sweep runs as a serial async queue rather than a `dolist' of
+;; `call-process'. pdfannots takes seconds to minutes per volume, so a
+;; synchronous loop over the whole library would wedge Emacs for the best part
+;; of an hour. One process at a time, each sentinel starting the next, keeps
+;; the editor usable throughout and keeps memory flat.
+(defvar joe/--annot-queue nil "Remaining (PDF . CITEKEY) pairs for the sweep.")
+(defvar joe/--annot-run nil "State plist for the in-flight sweep, or nil.")
+
+(defun joe/import-all-pdf-annotations (&optional dir)
+  "Import highlights from every annotated PDF in DIR into its Denote note.
+DIR defaults to the first of `citar-library-paths'.
+
+Each annotated PDF is matched to a bib entry, that entry's citar-denote note
+is opened (or created), and the annotations are merged into its `* PDF
+Annotations' section by `joe/--merge-annotations' -- so re-running this is
+safe, and only genuinely new highlights are added.
+
+Runs in the background, one PDF at a time, and pops a report when done: what
+landed where, which annotated PDFs no bib entry claims, and what failed.
+
+Uses the cached PDF scan; see `joe/rescan-annotated-pdfs'."
+  (interactive)
+  (require 'citar)
+  (require 'citar-denote)
+  (when joe/--annot-run
+    (user-error "An annotation sweep is already running"))
+  (let* ((dir (or dir (car citar-library-paths)))
+         (scan (joe/--annotated-pdfs dir))
+         (keys (joe/--pdf-basename->citekey))
+         queue orphans)
+    (dolist (pdf (car scan))
+      (let ((citekey (gethash (downcase (file-name-nondirectory pdf)) keys)))
+        (if citekey
+            (push (cons pdf citekey) queue)
+          (push (file-name-nondirectory pdf) orphans))))
+    (setq joe/--annot-queue (nreverse queue))
+    (setq joe/--annot-run (list :total (length joe/--annot-queue)
+                                :done 0
+                                :imported nil
+                                :orphans (nreverse orphans)
+                                :failed (cdr scan)))
+    (message "Importing annotations from %d PDF%s…"
+             (length joe/--annot-queue)
+             (if (= (length joe/--annot-queue) 1) "" "s"))
+    (joe/--annot-next)))
+
+(defun joe/--annot-record (key value)
+  "Prepend VALUE to the list under KEY in `joe/--annot-run'."
+  (plist-put joe/--annot-run key (cons value (plist-get joe/--annot-run key))))
+
+(defun joe/--annot-next ()
+  "Process the next queued PDF, or finish the sweep when the queue is empty."
+  (if (null joe/--annot-queue)
+      (let ((run joe/--annot-run))
+        (setq joe/--annot-run nil)
+        (joe/--show-annotation-report (nreverse (plist-get run :imported))
+                                      (plist-get run :orphans)
+                                      (nreverse (plist-get run :failed))
+                                      (plist-get run :total)))
+    (let* ((next (pop joe/--annot-queue))
+           (pdf (car next))
+           (citekey (cdr next))
+           (out (generate-new-buffer " *pdfannots-batch*"))
+           (cmd (joe/--pdfannots-command pdf)))
+      (plist-put joe/--annot-run :done (1+ (plist-get joe/--annot-run :done)))
+      (message "[%d/%d] %s"
+               (plist-get joe/--annot-run :done)
+               (plist-get joe/--annot-run :total)
+               (file-name-nondirectory pdf))
+      (make-process
+       :name "pdfannots-batch"
+       :buffer out
+       :command cmd
+       :sentinel
+       (lambda (proc _event)
+         (when (memq (process-status proc) '(exit signal))
+           (let ((raw (with-current-buffer out (buffer-string))))
+             (kill-buffer out)
+             (condition-case err
+                 (if (or (not (zerop (process-exit-status proc)))
+                         (string-empty-p (string-trim raw)))
+                     (joe/--annot-record
+                      :failed (cons (file-name-nondirectory pdf)
+                                    "pdfannots produced no usable output"))
+                   (let* ((note (joe/--note-for-citekey citekey))
+                          (added (joe/--merge-annotations
+                                  (find-file-noselect note) raw)))
+                     (joe/--annot-record
+                      :imported (list citekey added (file-name-nondirectory note)))))
+               (error (joe/--annot-record
+                       :failed (cons (file-name-nondirectory pdf)
+                                     (error-message-string err)))))
+             ;; Keep the chain going regardless of how this one turned out.
+             (joe/--annot-next))))))))
+
+(defun joe/--show-annotation-report (imported orphans failed total)
+  "Display a summary buffer for a `joe/import-all-pdf-annotations' sweep."
+  (let ((buf (get-buffer-create "*annotation-import-report*"))
+        (new (apply #'+ (mapcar #'cadr imported))))
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (format "Annotation import  —  %s\n"
+                        (format-time-string "%F %R")))
+        (insert (make-string 72 ?-) "\n\n")
+        (insert (format "%d annotated PDF%s found, %d new annotation%s imported\n\n"
+                        total (if (= total 1) "" "s")
+                        new (if (= new 1) "" "s")))
+        (dolist (r imported)
+          (insert (format "%s %s\n"
+                          (if (zerop (cadr r)) "·" "✓") (car r))
+                  (format "    +%d → %s\n" (cadr r) (caddr r))))
+        (when orphans
+          (insert (format "\nNo bib entry claims these %d PDF%s — add one, then rerun:\n"
+                          (length orphans) (if (= (length orphans) 1) "" "s")))
+          (dolist (o orphans) (insert (format "  ? %s\n" o))))
+        (when failed
+          (insert (format "\n%d failure%s:\n" (length failed)
+                          (if (= (length failed) 1) "" "s")))
+          (dolist (f failed) (insert (format "  ✗ %s\n      %s\n" (car f) (cdr f)))))
+        (goto-char (point-min))
+        (special-mode)))
+    (display-buffer buf)))
+
+(keymap-global-set "C-c f H" #'joe/import-all-pdf-annotations)
 
 ;;;; Batch book import (Downloads -> bib + library)
 ;; Unattended importer: resolve each PDF's ISBN (filename first, then the PDF's
@@ -1037,7 +1307,7 @@ for each newly-committed entry from `joe/bib-keywords'.  Set to nil to
 skip tagging (e.g. no OpenRouter key, or rate-limited) without losing
 the setting.")
 
-(defvar joe/openrouter-model "google/gemma-4-26b-a4b-it:free"
+(defvar joe/openrouter-model "nvidia/nemotron-3-ultra-550b-a55b:free"
   "OpenRouter model slug used to auto-tag imported books.
 The task is closed-vocabulary word-picking, not reasoning, so a small,
 fast, plain instruction-tuned free-tier model is plenty -- avoid the
@@ -1051,7 +1321,7 @@ The key lives OUTSIDE this repo, which is public.  Add a line like
     machine openrouter.ai password sk-or-v1-...
 to ~/.authinfo (searched first by default in Emacs 30) or ~/.authinfo.gpg
 if you want it encrypted at rest.  Never inline a key in this file."
-  (or (getenv "OPENROUTER_API_KEY")
+(or (getenv "OPENROUTER_API_KEY")
       (auth-source-pick-first-password :host "openrouter.ai")))
 
 (defvar joe/openrouter-min-interval 3.2

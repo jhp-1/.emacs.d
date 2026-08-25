@@ -48,6 +48,7 @@
                        (require 'joe-tools)
                        (require 'joe-ai)
                        (require 'joe-elfeed)
+                       (require 'joe-mail)
                        (require 'joe-media)))
 
 ;; Restore GC settings and report startup time
