@@ -106,7 +106,7 @@
           ("https://sootyempiric.blogspot.com/feeds/posts/default?alt=rss" philosophy) ; The Sooty Empiric
           ("https://philosopheroftheoilsands.substack.com/feed" philosophy)            ; Philosopher of the Oil Sands
           ("https://henadology.wordpress.com/feed/" philosophy religion) ; Henadology
-("https://plato.stanford.edu/rss/sep.xml" philosophy)
+	  ("https://plato.stanford.edu/rss/sep.xml" philosophy)
           ;; --- esotericism ---
           ("https://shwep.net/podcast/feed/" esotericism history)        ; SHWEP
           ("https://eliasartista.substack.com/feed" esotericism)         ; Avalon  (verify)
@@ -152,7 +152,8 @@
           "https://www.paradise-almanac.net/feed"                        ; Paradise Almanac
           "https://seer2005.substack.com/feed"                           ; The Limitless Readings
           "https://tropik.space/index.xml"                               ; Tropik
-          "https://irregularnotes.substack.com/feed")))                  ; irregular notes
+          "https://irregularnotes.substack.com/feed"
+	  "https://robashlar.substack.com/feed")))                  ; irregular notes
 
 (provide 'joe-elfeed)
 ;;; joe-elfeed.el ends here
