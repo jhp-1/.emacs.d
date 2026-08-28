@@ -194,6 +194,144 @@ Lives in the `career/' project silo (git repo), not the notes root.")
     ("C-c n d h" . denote-org-dblock-insert-files-as-headings)
     ("C-c n d m" . denote-org-dblock-insert-missing-links)))
 
+;;;;; org-transclusion
+;; The dblocks above are the wrong tool for reading one heading out of another
+;; note. They select whole *files* by filename regexp -- there is no heading or
+;; search-option parameter anywhere in denote-org -- and what they write is a
+;; copy, so an edit made inside a block is discarded the next time you press
+;; `C-c C-x C-u'. org-transclusion fills that gap: a `#+transclude:' keyword
+;; followed by a link displays the target's live contents in the buffer, while
+;; the file on disk keeps nothing but the one-line keyword.
+;;
+;;   #+transclude: [[denote:20260714T173000::#h4f2a][Hub::Method]]
+;;   #+transclude: [[denote:20260714T173000::*Method]] :only-contents :level 2
+;;
+;; `:only-contents' drops the heading line itself; `:level N' re-levels the
+;; transcluded subtree to fit where it lands.
+;;
+;; Two things that surprise people, neither of them a misconfiguration here:
+;; transcluded text is read-only until `C-c n t e' starts a live-sync edit, and
+;; a `#+transclude:' keyword exports as nothing, so a buffer must have its
+;; transclusions added (`C-c n t A', or just turn the minor mode on) before
+;; exporting or the content is silently absent from the output.
+;;
+;; Version note: `package-archives' carries gnu, melpa and nongnu but
+;; deliberately not GNU-devel, so `:ensure' installs GNU ELPA's stable 1.4.0
+;; (2024-05-20) rather than the 2.0.0-rc snapshot that the development archive
+;; ships. The glue below is written against the parts both releases share, so
+;; that is a preference rather than a constraint.
+
+;; org-transclusion has no built-in `denote:' support and is not getting any:
+;; nobiot/org-transclusion#160 ("Support denote: links") was closed without it,
+;; leaving `org-transclusion-add-functions' -- a documented extension point --
+;; as the sanctioned route. This is the denote arm of that hook, after the
+;; snippet in that issue. It moved here from joe-counting-house.el, where it
+;; had been sitting inert: it is generic denote glue, not Counting House
+;; machinery.
+;;
+;; Two deliberate choices:
+;;
+;; - It rewrites the denote link into a `file:' link rather than resolving the
+;;   target itself. Heading transclusion is unreliable through `id:' links
+;;   (nobiot/org-transclusion#237), whereas file links carrying a search option
+;;   are the best-tested path; and `org-transclusion-wrap-path-to-link' builds
+;;   the link object the same way org-transclusion builds its own, so what
+;;   `org-transclusion-add-org-file' is handed here is indistinguishable from
+;;   its ordinary input.
+;;
+;; - Everything it touches came through the 1.4 -> 2.0 refactor unchanged: the
+;;   hook contract (LINK PLIST -> payload plist), `org-transclusion-add-org-file'
+;;   and `org-transclusion-wrap-path-to-link'. What 2.0 did break was
+;;   `org-transclusion-add-payload' and the signature of
+;;   `org-transclusion-content-insert', neither of which appears here.
+(defun joe/denote-transclusion-add (link plist)
+  "Resolve a `denote:' LINK for org-transclusion, honouring PLIST.
+Return nil for any other link type, so the remaining functions in
+`org-transclusion-add-functions' still get their turn."
+  (when (string= "denote" (org-element-property :type link))
+    (require 'denote)
+    ;; Org splits a `::' search option off `file:' links only, so for a denote
+    ;; link the identifier and the search term arrive together in :path.
+    (let* ((parts (split-string (org-element-property :path link) "::"))
+           (identifier (car parts))
+           (search (cadr parts))
+           (path (denote-get-path-by-id identifier)))
+      (if path
+          (org-transclusion-add-org-file
+           (org-transclusion-wrap-path-to-link
+            (format "[[file:%s%s]]" path (if search (concat "::" search) "")))
+           plist)
+        ;; Say which identifier failed. Falling through to the other hook
+        ;; functions with nil is correct -- none of them claims denote links --
+        ;; but on its own it would only produce org-transclusion's generic
+        ;; "No transclusion added" and leave you guessing at the cause.
+        (message "Denote transclusion: no file with identifier %s" identifier)
+        nil))))
+
+(defun joe/denote-transclude-heading (&optional current-file)
+  "Insert a `#+transclude:' line targeting a heading in a Denote Org file.
+Prompt for the note, then for the heading. With optional CURRENT-FILE as a
+prefix argument, pick a heading in the current file instead.
+
+The link is written as [[denote:IDENTIFIER::#CUSTOM-ID]]:
+`denote-org-link-to-heading' writes a CUSTOM_ID property into the target
+heading when it has none, so the reference survives that heading being
+retitled, and the denote identifier means it survives the file being renamed
+too. That property is the one edit this command makes outside the current
+buffer, and it is what makes the transclusion durable."
+  (interactive "P" org-mode)
+  (unless (derived-mode-p 'org-mode)
+    (user-error "`#+transclude:' keywords only work in Org buffers"))
+  (require 'denote-org)
+  ;; Wrapped so that quitting either prompt leaves no half-written keyword
+  ;; behind; a CUSTOM_ID already written into the target note is harmless and
+  ;; gets reused next time.
+  (atomic-change-group
+    (unless (bolp) (insert "\n"))
+    (insert "#+transclude: ")
+    (denote-org-link-to-heading current-file)))
+
+(defun joe/denote-transclude-file ()
+  "Insert a `#+transclude:' line targeting a whole Denote note.
+The heading-level counterpart is `joe/denote-transclude-heading'; for many
+notes at once, the denote-files dblocks above are the better tool."
+  (interactive nil org-mode)
+  (unless (derived-mode-p 'org-mode)
+    (user-error "`#+transclude:' keywords only work in Org buffers"))
+  (require 'denote)
+  (when-let* ((file (denote-file-prompt ".*\\.org" "Transclude note"))
+              (identifier (denote-retrieve-filename-identifier file)))
+    (unless (bolp) (insert "\n"))
+    (insert (format "#+transclude: [[denote:%s][%s]]\n"
+                    identifier (denote-get-link-description file)))))
+
+;; `:after org' rather than `:defer', matching the denote-org block above: the
+;; bindings live in `org-mode-map', so the form has to wait for that map to
+;; exist. use-package autoloads every command it binds, so the package itself
+;; still loads on first use, and `:config' then registers the denote arm before
+;; any transclusion is attempted.
+;;
+;; Only the entry points are bound. Inside a transclusion, org-transclusion's
+;; own `org-transclusion-map' already offers e/g/d/o/P/D on single keys.
+(use-package org-transclusion
+  :ensure t
+  :after org
+  :bind
+  ( :map org-mode-map
+    ("C-c n t t" . org-transclusion-mode)
+    ("C-c n t a" . org-transclusion-add)
+    ("C-c n t A" . org-transclusion-add-all)
+    ("C-c n t r" . org-transclusion-remove)
+    ("C-c n t R" . org-transclusion-remove-all)
+    ("C-c n t g" . org-transclusion-refresh)
+    ("C-c n t e" . org-transclusion-live-sync-start)
+    ("C-c n t o" . org-transclusion-open-source)
+    ("C-c n t m" . org-transclusion-make-from-link)
+    ("C-c n t h" . joe/denote-transclude-heading)
+    ("C-c n t f" . joe/denote-transclude-file))
+  :config
+  (add-to-list 'org-transclusion-add-functions #'joe/denote-transclusion-add))
+
 ;;;;; denote-journal
 (use-package denote-journal
   :ensure t

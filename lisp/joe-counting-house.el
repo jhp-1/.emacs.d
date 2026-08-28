@@ -178,24 +178,11 @@ citar-denote note with the usual de-duplication, so re-running is safe."
 
 (define-key global-map (kbd "C-c n c") #'joe/counting-house)
 
-;; Bridge so org-transclusion understands denote: links.  Inert until
-;; org-transclusion is installed; nothing to undo if it never is.
-(with-eval-after-load 'org-transclusion
-  (defun joe/ch-transclusion-add-denote (link plist)
-    "Teach org-transclusion to resolve denote: LINK types."
-    (when (string= "denote" (org-element-property :type link))
-      (let* ((raw (org-element-property :path link))
-             (parts (split-string raw "::"))
-             (path (denote-get-path-by-id (car parts)))
-             (search (cadr parts)))
-        (when path
-          (let ((file-link (with-temp-buffer
-                             (insert (format "[[file:%s%s]]" path
-                                             (if search (concat "::" search) "")))
-                             (goto-char (point-min))
-                             (org-element-link-parser))))
-            (org-transclusion-add-org-file file-link plist))))))
-  (add-to-list 'org-transclusion-add-functions #'joe/ch-transclusion-add-denote))
+;; The org-transclusion bridge that used to sit here now lives in
+;; joe-org-notes.el, as `joe/denote-transclusion-add', alongside the denote and
+;; denote-org blocks. It was generic denote glue rather than Counting House
+;; machinery, and it had never run: it was guarded on org-transclusion being
+;; loaded, and the package was not installed. It is installed now.
 
 (provide 'joe-counting-house)
 ;;; joe-counting-house.el ends here
