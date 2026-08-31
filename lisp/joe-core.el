@@ -22,7 +22,16 @@
 ;; `:ensure nil' does not leave them missing. This mirrors the old `:ensure t'
 ;; (which installs at config time regardless of :defer/:if), so behaviour on
 ;; non-Nix hosts is unchanged.
-(unless (bound-and-true-p joe/nix-emacs-p)
+;;
+;; Android is excluded for the opposite reason: none of the three can work
+;; there. pdf-tools needs an epdfinfo built from C, jinx a jinx-mod.so, and
+;; notmuch's elisp is useless without the notmuch CLI and a local maildir. The
+;; APK has no compiler, so this would spend a phone's startup downloading three
+;; packages that then fail at first use. Every consumer of them is already
+;; guarded -- jinx on `executable-find', pdf-tools and notmuch in modules that
+;; init.el does not load on Android at all.
+(unless (or (bound-and-true-p joe/nix-emacs-p)
+            (bound-and-true-p joe/android-p))
   (dolist (pkg '(notmuch pdf-tools jinx))
     (unless (package-installed-p pkg)
       (unless package-archive-contents (package-refresh-contents))
@@ -50,9 +59,16 @@
 ;; of a noexec /home, so it applies verbatim to the nixdesktop. Note that
 ;; setting `native-comp-jit-compilation' to nil does NOT cover this — the whole
 ;; point of failure 1 is that compile-angel ignores that variable.
+;;
+;; Also off on Android, for cost rather than correctness: the APK is built
+;; without libgccjit, so `native-comp-available-p' is nil and failure 1 cannot
+;; arise, but byte-compiling every library on load is minutes of phone CPU (and
+;; battery) to save a fraction of a second of load time. package.el's own
+;; compile-on-install already covers the packages that matter.
 (use-package compile-angel
   :ensure t
-  :unless (bound-and-true-p joe/noexec-home-p)
+  :unless (or (bound-and-true-p joe/noexec-home-p)
+              (bound-and-true-p joe/android-p))
   :demand t
   :config
   (compile-angel-on-load-mode)
@@ -190,8 +206,37 @@ initial non-graphical frame.  Skips the update unless both are real colors."
 ;; mode on Notes. Syncthing follows them by folder ID, so its config was
 ;; repointed rather than the files re-shared. Noises is bulk audio and stays put.
 ;; Symlinks remain at the old /mnt/media paths, so a stale reference still works.
+;;
+;; The Android branches prefer a directory inside TERMUX's home rather than
+;; Emacs's own (/data/data/org.gnu.emacs/files) or a Storage Access Framework
+;; mount under /content. That is not a stylistic choice:
+;;
+;;   - /content is served entirely by Emacs's own file primitives, so a
+;;     SUBPROCESS started there silently gets Emacs's home as its working
+;;     directory instead. That is why ripgrep and git return nothing on a
+;;     Nextcloud/Syncthing folder mounted that way. It is also very slow --
+;;     minutes to build an agenda, on Google's document-provider IPC.
+;;   - Termux's home is an ordinary Unix directory that both Emacs and its
+;;     subprocesses can read, and Syncthing can be run inside Termux to keep it
+;;     in step with the desktops. See README.
+;;
+;; Falls back to a directory in Emacs's own home when Termux is absent, so a
+;; non-`termux/' APK still gets a valid (if subprocess-poor) path rather than
+;; one that cannot exist. `org-agenda-files' and `denote-directory' are then
+;; pointed at whatever this resolves to, and org's own `file-directory-p' guard
+;; (joe-org-notes.el) covers the case where neither has been created yet.
+(defun joe/android-dir (name)
+  "Return the Android path for a sync directory called NAME.
+Termux's home when it is reachable, else Emacs's own home."
+  (let ((termux (expand-file-name (concat "Sync/" name)
+                                  joe/android-termux-home)))
+    (if (file-directory-p joe/android-termux-home)
+        termux
+      (expand-file-name (concat "~/" name)))))
+
 (defconst joe/notes-dir
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/notes"))
+        ((bound-and-true-p joe/android-p) (joe/android-dir "Notes"))
         ((bound-and-true-p joe/nix-emacs-p) (expand-file-name "~/Notes"))
         ((eq system-type 'windows-nt) "d:/Notes")
         (t "/mnt/d/Notes"))
@@ -199,6 +244,7 @@ initial non-graphical frame.  Skips the update unless both are real colors."
 
 (defconst joe/texts-dir
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/texts"))
+        ((bound-and-true-p joe/android-p) (joe/android-dir "Texts"))
         ((bound-and-true-p joe/nix-emacs-p) (expand-file-name "~/Texts"))
         ((eq system-type 'windows-nt) "d:/Texts")
         (t "/mnt/d/Texts"))
@@ -206,6 +252,7 @@ initial non-graphical frame.  Skips the update unless both are real colors."
 
 (defconst joe/noises-dir
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/noises"))
+        ((bound-and-true-p joe/android-p) (joe/android-dir "Noises"))
         ((bound-and-true-p joe/nix-emacs-p) "/mnt/media/Noises")
         ((eq system-type 'windows-nt) "d:/Noises")
         (t "/mnt/d/Noises"))

@@ -3,7 +3,11 @@
 ;;;; Follow mouse
 ;; Focus-follows-mouse conflicts with Windows' own focus system when using
 ;; multiple frames; disable it there.
-(when (not (eq system-type 'windows-nt))
+;; Off on Android too, where there is no mouse to follow: the port synthesises
+;; mouse motion from touch events, so this turns an incidental drag of the
+;; thumb across a window boundary into a window switch.
+(when (not (or (eq system-type 'windows-nt)
+               (bound-and-true-p joe/android-p)))
   (setq mouse-autoselect-window t))
 
 ;;;; Cursor
@@ -69,7 +73,10 @@
   :ensure t
   :config
   (setq-default olivetti-body-width 0.7)
-  (setq olivetti-minimum-body-width 80)
+  ;; A phone in portrait is narrower than the 80-column floor, so olivetti
+  ;; would refuse to narrow anything and <f6> would look like a no-op.
+  (setq olivetti-minimum-body-width
+        (if (bound-and-true-p joe/android-p) 30 80))
   (setq olivetti-recall-visual-line-mode-entry-state t)
   :bind
   ("<f6>" . olivetti-mode))
@@ -78,9 +85,15 @@
 ;; Font faces are a window-system concept; on the appliance's TTY fontaine
 ;; warns "Cannot use Fontaine in a terminal emulator". The console font is set
 ;; system-wide instead (services.kmscon -> Aporetic Serif Mono).
+;; Skipped on Android for a different reason: Aporetic is not installed there
+;; (Android fonts come from ~/fonts and nothing else), and fontaine would set
+;; the face to a family that does not exist. joe-android.el sets the default
+;; height directly instead, which is the only part of the preset that matters
+;; on one small screen.
 (use-package fontaine
   :ensure t
-  :unless (bound-and-true-p joe/console-appliance-p)
+  :unless (or (bound-and-true-p joe/console-appliance-p)
+              (bound-and-true-p joe/android-p))
   :config
   (setq fontaine-presets
         '((regular
@@ -101,9 +114,11 @@
 ;; no fontconfig fallback: whatever single font is configured must contain the
 ;; glyph or you get a replacement box. Aporetic is not nerd-patched, hence the
 ;; row of "?" boxes. Skip the icon packages there rather than render rubbish.
+;; `joe/no-icon-font-p' (early-init.el) covers the appliance's console and
+;; Android alike -- same symptom, replacement boxes, for unrelated reasons.
 (use-package nerd-icons
   :ensure t
-  :unless (bound-and-true-p joe/console-appliance-p))
+  :unless (bound-and-true-p joe/no-icon-font-p))
 ;; nerd-icons-completion is fully configured in joe-completion.el
 ;; (marginalia hook + nerd-icons-completion-mode); no duplicate block needed here.
 ;;;; auto-dark-emacs
@@ -114,9 +129,13 @@
 ;; has none, so it errors with "Could not determine a viable theme detection
 ;; mechanism!" and leaves whichever theme happens to be first — modus-vivendi,
 ;; i.e. dark. Skip it there and pin the light theme explicitly.
+;; Android is skipped for the same reason as the console: auto-dark has no
+;; detection mechanism there either, so it errors out and strands whichever
+;; theme loaded first. The theme is pinned explicitly just below.
 (use-package auto-dark
   :ensure t
-  :unless (bound-and-true-p joe/console-appliance-p)
+  :unless (or (bound-and-true-p joe/console-appliance-p)
+              (bound-and-true-p joe/android-p))
   :custom
   (custom-safe-themes t)
   (auto-dark-themes '((modus-vivendi) (modus-operandi)))
@@ -124,6 +143,12 @@
   :hook
   ((auto-dark-dark-mode auto-dark-light-mode) . joe--sync-pdf-midnight-colors)
   :init (auto-dark-mode))
+
+;; Standing in for auto-dark above. <f8> (`modus-themes-toggle') still switches
+;; by hand, which on a phone -- where you can see the screen and the OS setting
+;; is one swipe away anyway -- is enough.
+(when (bound-and-true-p joe/android-p)
+  (load-theme 'modus-operandi t))
 
 (when (bound-and-true-p joe/console-appliance-p)
   ;; On a TTY Emacs emits SGR 39;49 for `default' - "whatever the terminal's
@@ -238,8 +263,13 @@ list without usable times; callers must handle nil."
   (joe/console-flatten-mode-line))
 
 ;;;; ultra-scroll
+;; Not on Android: it retrofits pixel-precise scrolling onto mouse wheel and
+;; trackpad events, and the port already does its own precision scrolling from
+;; touch events (`touch-screen-precision-scroll'). Two systems driving the same
+;; window is how you get scroll that fights the finger.
 (use-package ultra-scroll
   :ensure t
+  :unless (bound-and-true-p joe/android-p)
   :config
   (ultra-scroll-mode 1))
 

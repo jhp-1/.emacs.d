@@ -8,7 +8,8 @@ Personal Emacs configuration.
 .
 ├── init.el           # Entry point; requires joe-core + joe-completion
 │                     # eagerly, the rest on idle timers
-├── early-init.el     # GC, UI suppression, joe/console-appliance-p
+├── early-init.el     # GC, UI suppression, joe/console-appliance-p,
+│                     # joe/android-p + Termux PATH
 └── lisp/
     ├── joe-core.el           # Package management, core settings, path constants
     ├── joe-completion.el     # Vertico, Corfu, Cape, Consult, Embark
@@ -22,13 +23,21 @@ Personal Emacs configuration.
     ├── joe-elfeed.el         # Elfeed feeds + Karl-Voit-style tag vocabulary
     ├── joe-mail.el           # Notmuch, mu4e, msmtp
     ├── joe-media.el          # Ambient noise playback via mpv
-    └── joe-tools.el          # Magit, rg, shells (PowerShell/eshell), eww, tmr
+    ├── joe-eww.el            # eww, the built-in text web browser
+    ├── joe-android.el        # Touchscreen input, tool bar, Android storage
+    └── joe-tools.el          # Magit, rg, shells (PowerShell/eshell), tmr
 ```
+
+`joe-eww.el` was split out of `joe-tools.el`: eww is the only thing that file
+configured which needs no external program, and Android wants it while wanting
+none of magit, rg, ghostel, eshell or bluetooth — the last of which `require`s
+dbus at load time, so reaching eww through `joe-tools.el` there would fail
+outright.
 
 ## Platform notes
 
-Runs on native Windows Emacs (30+), Linux/WSL, and a locked-down console
-appliance (see below).
+Runs on native Windows Emacs (30+), Linux/WSL, a locked-down console appliance
+and an Android phone (both below).
 
 On Windows, Unix tools (notmuch, mbsync, msmtp) are called through `.cmd`
 wrapper scripts in `C:/Users/Joe/bin` that delegate to WSL via `wsl.exe`.
@@ -81,6 +90,178 @@ theme load, so a one-shot `set-face-attribute` is silently undone by `<f8>`.
 
 The system side (LUKS, the five sandboxing barriers, kmscon, Syncthing,
 key bindings) lives in that machine's `/etc/nixos/configuration.nix`, not here.
+
+## Android
+
+A phone, running the native Android port (the APK — not a terminal Emacs under
+Termux). Gated on:
+
+```elisp
+(defconst joe/android-p (eq system-type 'android) ...)   ; early-init.el
+```
+
+Scope is deliberately two things: **reading and editing org, and reading the
+web in eww.** `init.el` branches on `joe/android-p` and loads only
+`joe-android`, `joe-core`, `joe-completion`, `joe-org-notes`, `joe-eww`,
+`joe-ui` and `joe-files`. The rest is not merely unwanted, it cannot work:
+`joe-research` needs pdf-tools (`epdfinfo` is a C program and there is no
+compiler), `joe-mail` needs the notmuch CLI and a local maildir, `joe-media`
+shells out to mpv, `joe-python` needs a Python, `joe-tools` loads bluetooth
+which `require`s dbus. Loading them would spend a phone's startup downloading
+packages that then fail at first use.
+
+`joe-android.el` is required **eagerly and first**, unlike every other module,
+because it turns on the tool bar, menu bar and modifier bar — which on a
+touchscreen are not decoration but the only way to press Ctrl at all.
+
+### Installing
+
+Use a build from the `termux/` subdirectory of
+<https://sourceforge.net/projects/android-ports-for-gnu-emacs/files/>: those
+set `sharedUserId` to `com.termux`, which is what lets Emacs execute Termux's
+binaries. Without it there is no `git`, `rg`, `am` or even `ls` on
+`exec-path` — the APK ships no userland of its own. Install **Termux first,
+then Emacs**; the API-level number in the APK filename is the minimum Android
+version, and the CPU architecture must match exactly. 30.2 is the safe choice;
+the APK builds lag the tarball releases considerably.
+
+The Termux APK bundled in that directory is from June 2024 and its signature
+is no longer valid on Android 15. Two ways round it: re-sign the current
+upstream Termux with Emacs's own published keystore
+(`pkg install apksigner`, then `apksigner sign --ks emacs.keystore termux.apk`
+using the keystore from `java/emacs.keystore` in the Emacs tree), or sign both
+APKs with a personal key after adding `android:sharedUserId` to Emacs's
+manifest with apktool.
+
+Avoid the F-Droid build: it is an old February snapshot with no GnuTLS, no
+image libraries and no tree-sitter, and it uses a different signing key, so
+you cannot upgrade from it — you must uninstall first.
+
+### Text conversion: the one thing that will confuse you
+
+Android input methods do not send key events. They call Emacs's buffer-editing
+primitives directly — a mechanism called *text conversion* — and Emacs infers
+what electric-pair and auto-fill should have done by analysing the edit after
+the fact.
+
+So **anything that reads raw key events cannot see your typing while the IME is
+driving**: evil, meow, and org's own speed keys. The keystrokes arrive as
+inserted text instead of as commands. Nothing is misconfigured when that
+happens; it is the design.
+
+`joe/android-toggle-text-conversion` (`C-c A t`, and a tool bar button) flips
+`text-conversion-style` buffer-locally. With it off the IME sends real key
+events, so `org-use-speed-commands` works — `n`/`p`/`f`/`b`/`t`/`c` as bare
+letters at the start of a headline, which is the single largest ergonomic win
+available on this machine. The cost is predictive and swipe typing, which is
+why it is a toggle and not a setting.
+
+Two related IME bugs, both documented upstream as IME bugs rather than Emacs
+bugs: point jumping to the start of the buffer after typing an opening paren,
+and fundamental-mode/Customize buffers going haywire in IMEs that do not
+implement `TYPE_NULL`. The fix for both is a better IME — the port's
+maintainer uses AnySoftKeyboard; Unexpected Keyboard is the one most often
+recommended in write-ups.
+
+### What is configured, and why
+
+| Setting | Reason |
+|---|---|
+| `modifier-bar-mode` | A second tool bar row applying Ctrl/Meta/Super/Shift to the next event. The only way to type a modified sequence on glass. |
+| `tool-bar-mode`, `menu-bar-mode` | Not chrome here — `M-x` lives at Edit → Execute Command. `early-init.el` stops suppressing them on Android. |
+| `tool-bar-position` = `bottom` | Buttons under the thumbs. Implemented on non-GTK systems at an Android user's request. |
+| `touch-screen-display-keyboard` = `t` | Emacs hides the on-screen keyboard in read-only buffers to save space. That is what makes eww's URL prompt, dired and the agenda feel broken. |
+| `tool-bar-button-margin` = 12 | FAQ 22: button margins do not scale with display density, so buttons render undersized on a high-DPI phone. |
+| `context-menu-mode` | Long-press becomes a real context menu. |
+| `server-start` | Puts Emacs in Android's "open with" dialog for text files. |
+| `initial-buffer-choice` | Lands on Dired in the notes directory rather than a scratch buffer. |
+| ls-lisp | Dired shells out to `ls`; without Termux there is no `ls` at all. `dired-listing-switches` drops `--group-directories-first` (a GNU coreutils flag ls-lisp cannot parse) — set canonically in `joe-files.el`, not in `joe-android.el`, because that file loads on a later idle timer and would overwrite it. |
+| Five tool bar buttons | M-x, eww, agenda, capture, text-conversion toggle. |
+| `shr-use-fonts` = nil, `shr-max-image-proportion` 0.4 | Phone-width reflow, and images that do not push the text below the fold. |
+| `eww-download-directory` = `/sdcard/Download/` | `~/Downloads` is Emacs's private app directory; nothing else on the phone can see a file put there. |
+| Default face height 140 | Fontaine is skipped (Aporetic is not installed), so this is set directly — and re-applied on `enable-theme-functions`, since `<f8>` reloads a theme. |
+
+Turned **off**: `compile-angel` (minutes of phone CPU; the APK has no
+libgccjit anyway), the forced installs of notmuch/pdf-tools/jinx in
+`joe-core.el` (none can work — no compiler), `auto-dark` (no detection
+mechanism, so it errors and strands whichever theme loaded first —
+`modus-operandi` is pinned explicitly instead), `fontaine`, `ultra-scroll`
+(the port does its own precision scrolling from touch events),
+`mouse-autoselect-window` (touch synthesises mouse motion, so a thumb drag
+across a window boundary would switch windows), the nerd-icons packages, and
+openwith's mpv associations.
+
+`joe/android-bind-volume-keys` is **off by default**. Turning it on binds
+volume-up to `joe/android-run-dwim` (mode-dispatching: `C-c C-c` in org,
+reload in eww, visit in dired), at the price of the volume rocker no longer
+changing the volume while Emacs has focus. Volume-*down* is never bound —
+pressed in rapid succession it is the port's `C-g` (`android-quit-keycode`).
+
+### Storage — the part that bites
+
+Android exposes three storage classes, and only one of them is any good:
+
+1. **Emacs's app directory** (`/data/data/org.gnu.emacs/files`) — its Unix
+   home. Private to Emacs.
+2. **External storage** (`/sdcard`) — needs a permission (Settings → Special
+   App Access on Android 11+). Contrary to what circulates, the Termux variant
+   of the APK is *not* required for this; the shared UID only means the two
+   apps inherit each other's grants.
+3. **Storage Access Framework** (`/content/...`) — Nextcloud, Syncthing
+   folders. **Avoid.** It is served entirely by Emacs's own file primitives, so
+   a subprocess started there silently gets Emacs's home as its working
+   directory instead — which is why ripgrep and git return nothing on such a
+   folder. It is also extremely slow; agenda builds of several minutes have
+   been reported. The same applies to `/assets`.
+
+So `joe/notes-dir` and friends resolve to `/data/data/com.termux/files/home/Sync/...`
+on Android (falling back to Emacs's own home if Termux is absent). That is an
+ordinary Unix directory both Emacs and its subprocesses can read. Keep it in
+step with the desktops by running Syncthing *inside Termux*:
+
+```sh
+pkg install syncthing termux-services
+
+SV_DIR="$PREFIX/var/service/syncthing"
+mkdir -p "$SV_DIR/log"
+cat > "$SV_DIR/run" <<EOF
+#!$PREFIX/bin/sh
+exec syncthing --no-browser --gui-address=127.0.0.1:8385 2>&1
+EOF
+chmod +x "$SV_DIR/run"
+ln -sf "$PREFIX/share/termux-services/svlogger" "$SV_DIR/log/run"
+
+echo 'source $PREFIX/etc/profile.d/start-services.sh' >> "$HOME/.bashrc"
+source "$PREFIX/etc/profile.d/start-services.sh"
+sv-enable syncthing && sv up syncthing && sv status syncthing
+```
+
+Port 8385 rather than the default 8384, which one author had trouble binding.
+
+### Odds and ends
+
+- **Quit / `C-g`**: press volume-down in rapid succession
+  (`android-quit-keycode`).
+- **Fonts**: `.ttf` files go in `~/fonts` — *not* a subdirectory, that tree is
+  not searched recursively. Drop a Nerd Font in there and `joe/no-icon-font-p`
+  in `early-init.el` can be set to nil to get the icon packages back. Ignore
+  Options → Set Default Font, an X-era vestige listing fonts that are not
+  present.
+- **E-ink** (Boox etc.): Android reports no monochrome visual class, so
+  font-lock contrast is poor. `(setq android-display-depth 4)` — 2–8 for
+  grayscale, 1 for monochrome.
+- **Getting a URL out of Emacs**: `browse-url-secondary-browser-function` is
+  set to `joe/android-browse-external`, which hands the URL to Android's `am`
+  (Termux required, and `am` errors on a bare hostname — the scheme is
+  mandatory). eww's `&` dispatches through that variable, so it keeps meaning
+  what it documents.
+  There is no incoming direction: Android has no share-target integration for
+  Emacs and no URL-scheme handler for org-protocol, so browser → Emacs is
+  copy, switch app, `C-y`.
+- **Do not** set `LD_LIBRARY_PATH` for the Termux binaries. That advice is
+  explicitly retracted by the port's README: Termux embeds its library paths
+  in its executables and the variable causes name collisions and linking
+  errors. `PATH` and `exec-path` only, which is what `early-init.el` does.
 
 ## Conventions worth knowing
 

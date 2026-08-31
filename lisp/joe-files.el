@@ -23,7 +23,14 @@ Hiding is just the absence of ls's -a flag, so flip it and re-list."
   (setq dired-recursive-copies 'always
         dired-recursive-deletes 'always
         delete-by-moving-to-trash t
-        dired-listing-switches "-lv --group-directories-first -h"
+        ;; --group-directories-first is a GNU coreutils flag. On Android there
+        ;; may be no `ls' binary at all -- the APK ships no userland -- in
+        ;; which case joe-android.el switches dired over to ls-lisp, whose
+        ;; switch parsing is its own and does not know that flag
+        ;; (`ls-lisp-dirs-first' is the equivalent, and is set there).
+        dired-listing-switches
+        (if (bound-and-true-p joe/android-p) "-lh"
+          "-lv --group-directories-first -h")
         dired-dwim-target t
         dired-auto-revert-buffer #'dired-directory-changed-p
         wdired-allow-to-change-permissions t
@@ -43,10 +50,16 @@ Hiding is just the absence of ls's -a flag, so flip it and re-list."
 (use-package dired-filter
   :ensure t)
 
+;; `dired-async-mode' does its work by starting a fresh Emacs subprocess. The
+;; Android APK cannot: `invocation-directory'/`invocation-name' do not name a
+;; runnable binary there. Same constraint that makes
+;; `joe/byte-compile-package-cleanly' (joe-core.el) fall back. Left off rather
+;; than left to fail silently mid-copy; dired's synchronous path still works.
 (use-package async
   :ensure t
   :config
-  (dired-async-mode 1))
+  (unless (bound-and-true-p joe/android-p)
+    (dired-async-mode 1)))
 
 ;;;; deadgrep
 (use-package deadgrep
@@ -56,13 +69,20 @@ Hiding is just the absence of ls's -a flag, so flip it and re-list."
   ("C-c g" . deadgrep))
 
 ;;;; openwith
+;; Kept loaded but empty on Android rather than skipped: `openwith-mode' is on
+;; `dired-mode-hook' above, so not loading the package would make every dired
+;; buffer fail on a void function. There is no mpv there, and handing a file://
+;; URI to Android's VIEW intent raises FileUriExposedException on anything
+;; modern, so there is nothing useful to associate -- an empty list makes the
+;; mode an honest no-op.
 (use-package openwith
   :ensure t
   :config
   (setq openwith-associations
-        '(("\\.\\(webm\\|mp4\\|mkv\\|avi\\|mp3\\|flac\\|wav\\|aiff\\|opus\\|aif\\)\\'"
-           "mpv --force-window"
-           (file)))))
+        (unless (bound-and-true-p joe/android-p)
+          '(("\\.\\(webm\\|mp4\\|mkv\\|avi\\|mp3\\|flac\\|wav\\|aiff\\|opus\\|aif\\)\\'"
+             "mpv --force-window"
+             (file))))))
 
 ;;;;; ibuffer
 (use-package ibuffer
@@ -71,16 +91,17 @@ Hiding is just the absence of ls's -a flag, so flip it and re-list."
   ("C-x C-b" . ibuffer))
 
 ;;;; nerd icons for dired and ibuffer
-;; See joe-ui.el: no glyph fallback on the appliance's console.
+;; See joe-ui.el: no glyph fallback on the appliance's console, and no
+;; nerd-patched font on Android. `joe/no-icon-font-p' covers both.
 (use-package nerd-icons-dired
   :ensure t
-  :unless (bound-and-true-p joe/console-appliance-p)
+  :unless (bound-and-true-p joe/no-icon-font-p)
   :hook
   (dired-mode . nerd-icons-dired-mode))
 
 (use-package nerd-icons-ibuffer
   :ensure t
-  :unless (bound-and-true-p joe/console-appliance-p)
+  :unless (bound-and-true-p joe/no-icon-font-p)
   :hook (ibuffer-mode . nerd-icons-ibuffer-mode))
 
 ;;;; General Dired optimizations

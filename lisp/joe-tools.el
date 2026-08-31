@@ -129,26 +129,11 @@ With prefix arg NEW, force a fresh session."
   ("C-c S" . joe/eshell-here))
 
 ;;;; eww
-(use-package eww
-  :ensure nil
-  :init
-  (setq browse-url-browser-function #'eww-browse-url)
-  :config
-  (setq eww-search-prefix "https://duckduckgo.com/html/?q=")
-  (setq eww-download-directory "~/Downloads/")
-  (setq eww-history t)
-  (setq eww-auto-rename-buffer 'title)
-  (setq eww-readable-urls
-	'("https://plato.stanford.edu/.*"
-          "https://www.marxists.org/.*"
-	  "https://splash247.com/.*"
-	  "https://theloadstar.com/.*"
-          ("https://en.wikipedia.org/.*" . t)))  
-  :bind
-  ("C-c e" . eww)
-  (:map eww-mode-map
-        ("M-n" . eww-next-url)
-        ("M-p" . eww-previous-url)))
+;; Moved out to joe-eww.el. It was the one thing in this file with no external
+;; dependency at all, and on Android it is wanted while magit, rg, ghostel,
+;; eshell and bluetooth are not -- bluetooth in particular `require's dbus at
+;; load time, which does not exist there, so merely loading this file to reach
+;; eww would fail.
 
 ;;;; Windows-only: explicit PATH and exec-path additions
 ;; On Windows, exec-path-from-shell is not used (it requires a POSIX shell).
