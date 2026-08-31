@@ -126,25 +126,49 @@
 ;; has none, so it errors with "Could not determine a viable theme detection
 ;; mechanism!" and leaves whichever theme happens to be first — modus-vivendi,
 ;; i.e. dark. Skip it there and pin the light theme explicitly.
-;; Android is skipped for the same reason as the console: auto-dark has no
-;; detection mechanism there either, so it errors out and strands whichever
-;; theme loaded first. The theme is pinned explicitly just below.
+;; Android is opt-in rather than skipped, and the reason it looked impossible
+;; is worth writing down. auto-dark CAN read the Android system theme: its
+;; `termux' method shells out to `cmd uimode night', a plain Android command,
+;; not anything from termux-api. What it will not do is CHOOSE that method
+;; here, because its detector gates the branch on
+;;
+;;     (and (eq system-type 'gnu/linux) (member 'dbus features) ...)
+;;
+;; which describes a terminal Emacs running INSIDE Termux, where system-type is
+;; gnu/linux -- not this APK, where it is `android'. So the cond falls through
+;; to "Could not determine a viable theme detection mechanism!" and strands
+;; whichever theme loaded first. `auto-dark-detection-method' is a defcustom
+;; that bypasses the detector entirely when non-nil, so naming the method is the
+;; whole fix.
+;;
+;; Still gated on `joe/android-auto-dark' (joe-android.el, off by default)
+;; because the polling is a subprocess and `cmd' may want a shell UID -- see
+;; that variable's docstring for the one-line check to run on the device.
 (use-package auto-dark
   :ensure t
   :unless (or (bound-and-true-p joe/console-appliance-p)
-              (bound-and-true-p joe/android-p))
+              (and (bound-and-true-p joe/android-p)
+                   (not (bound-and-true-p joe/android-auto-dark))))
   :custom
   (custom-safe-themes t)
   (auto-dark-themes '((modus-vivendi) (modus-operandi)))
-  (auto-dark-polling-interval-seconds 5)
   :hook
   ((auto-dark-dark-mode auto-dark-light-mode) . joe--sync-pdf-midnight-colors)
-  :init (auto-dark-mode))
+  :init
+  ;; Set before `auto-dark-mode', which reads both at startup. A five-second
+  ;; poll is nothing on a desktop and a subprocess every five seconds on a
+  ;; phone; sixty is still far quicker than anyone notices a theme change.
+  (if (bound-and-true-p joe/android-p)
+      (setq auto-dark-detection-method 'termux
+            auto-dark-polling-interval-seconds 60)
+    (setq auto-dark-polling-interval-seconds 5))
+  (auto-dark-mode))
 
-;; Standing in for auto-dark above. <f8> (`modus-themes-toggle') still switches
-;; by hand, which on a phone -- where you can see the screen and the OS setting
-;; is one swipe away anyway -- is enough.
-(when (bound-and-true-p joe/android-p)
+;; Standing in for auto-dark when it is not running. <f8>
+;; (`modus-themes-toggle') still switches by hand. Skipped when
+;; `joe/android-auto-dark' is on, or this would fight it for the first theme.
+(when (and (bound-and-true-p joe/android-p)
+           (not (bound-and-true-p joe/android-auto-dark)))
   (load-theme 'modus-operandi t))
 
 (when (bound-and-true-p joe/console-appliance-p)

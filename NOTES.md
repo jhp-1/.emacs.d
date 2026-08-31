@@ -167,20 +167,55 @@ recommended in write-ups.
 | `server-start` | Puts Emacs in Android's "open with" dialog for text files. |
 | `initial-buffer-choice` | Lands on Dired in the notes directory rather than a scratch buffer. |
 | `ls-lisp-dirs-first` | Emacs already lists directories with ls-lisp on Android — `ls-lisp-use-insert-directory-program` defaults to nil for `android` just as for `windows-nt`, so dired needs no `ls` and works without Termux. What is lost is `--group-directories-first`: ls-lisp sanitises away long GNU options with no short equivalent, so it is silently dropped (not misparsed). `ls-lisp-dirs-first` is the native equivalent. `dired-listing-switches` carries the Android branch in `joe-files.el`, which is its one canonical assignment — setting it from `joe-android.el` too would be a race, since `joe-files` loads on a later idle timer. |
-| Five tool bar buttons | M-x, eww, agenda, capture, text-conversion toggle. |
+| Six tool bar buttons | M-x, eww, agenda, capture, text-conversion toggle, clipboard→eww. |
+| `touch-screen-word-select`, `-extend-selection`, `-preview-select` | All three default to nil and all three are worth having. Character-granularity dragging with a fingertip is a losing game: word-select makes a long-press drag take whole words, extend-selection lets a tap on point or mark resume a region, and preview-select shows the selection in the echo area. |
+| `repeat-mode` | Built in since Emacs 28 and worth more here than on a desktop. After `C-x o`, a bare `o` switches windows again; every repeat is one modifier-bar round trip that does not happen. |
 | `shr-use-fonts` = nil, `shr-max-image-proportion` 0.4 | Phone-width reflow, and images that do not push the text below the fold. |
 | `eww-download-directory` = `/sdcard/Download/` | `~/Downloads` is Emacs's private app directory; nothing else on the phone can see a file put there. |
 | Default face height 140 | Fontaine is skipped (Aporetic is not installed), so this is set directly — and re-applied on `enable-theme-functions`, since `<f8>` reloads a theme. |
 
 Turned **off**: `compile-angel` (minutes of phone CPU; the APK has no
 libgccjit anyway), the forced installs of notmuch/pdf-tools/jinx in
-`joe-core.el` (none can work — no compiler), `auto-dark` (no detection
-mechanism, so it errors and strands whichever theme loaded first —
-`modus-operandi` is pinned explicitly instead), `fontaine`, `ultra-scroll`
+`joe-core.el` (none can work — no compiler), `fontaine`, `ultra-scroll`
 (the port does its own precision scrolling from touch events),
 `mouse-autoselect-window` (touch synthesises mouse motion, so a thumb drag
 across a window boundary would switch windows), the nerd-icons packages, and
 openwith's mpv associations.
+
+### Two things that need a device test first
+
+Both are off by default, and both are off for the same kind of reason: the
+Emacs half works and the Android half is unverified.
+
+**`joe/android-auto-dark`** — following the system light/dark setting. An
+earlier revision of these notes said auto-dark has no detection mechanism on
+Android. That was wrong. It has one: the `termux` method shells out to
+`cmd uimode night`, which is a plain Android command, not termux-api. What it
+will not do is *choose* that method, because its detector gates the branch on
+`(and (eq system-type 'gnu/linux) (member 'dbus features) ...)` — which
+describes a terminal Emacs running *inside* Termux, not this APK, where
+`system-type` is `android`. So it falls through to "Could not determine a
+viable theme detection mechanism!". `auto-dark-detection-method` is a
+defcustom that bypasses the detector when set, so naming the method is the
+entire fix. Before switching this on, check on the device that
+
+```
+M-: (shell-command-to-string "cmd uimode night")
+```
+
+answers `Night mode: yes` or `no` — `cmd` lives in `/system/bin` and some of
+its subcommands want a shell UID. The poll is a subprocess, so `joe-ui.el`
+drops the interval to 60s here; the desktop's 5s would be a battery decision
+rather than a cosmetic one.
+
+**`joe/android-notifications`** — agenda alerts in the notification shade.
+The port defines `android-notifications-notify` in C (`src/androidselect.c`),
+so this needs no Termux, no termux-api and no D-Bus, and a notification can
+carry action buttons that call back into Emacs. `joe-android.el` defines an
+`alert` style that forwards to it and points org-alert at that style. The
+limit is not Emacs: a timer only fires while the process is alive, and Android
+doze suspends backgrounded apps. Exempt Emacs from battery optimisation, then
+confirm alerts still arrive before relying on it.
 
 `joe/android-bind-volume-keys` is **on by default**, because it costs almost
 nothing. Emacs on Android already reserves *both* volume keys — that is the
@@ -253,13 +288,20 @@ Port 8385 rather than the default 8384, which one author had trouble binding.
   `android-display-planes`; the port's own SourceForge FAQ calls it
   `android-display-depth`. The two disagree and only your build settles it.
 - **Getting a URL out of Emacs**: `browse-url-secondary-browser-function` is
-  set to `joe/android-browse-external`, which hands the URL to Android's `am`
-  (Termux required, and `am` errors on a bare hostname — the scheme is
-  mandatory). eww's `&` dispatches through that variable, so it keeps meaning
-  what it documents.
-  There is no incoming direction: Android has no share-target integration for
-  Emacs and no URL-scheme handler for org-protocol, so browser → Emacs is
-  copy, switch app, `C-y`.
+  set to `joe/android-browse-external`, a thin wrapper over the port's native
+  `android-browse-url`. No Termux, and it handles URL-encoding and the
+  `file://` → `content://` conversion that a hand-built `am` command line does
+  not. The wrapper is load-bearing: `android-browse-url` takes
+  `(URL &optional SEND)` where SEND non-nil means *share* rather than *open*,
+  and `browse-url-secondary-browser-function` passes NEW-WINDOW as the second
+  argument — binding the raw function would turn every new-window request into
+  a share sheet. eww's `&` dispatches through that variable, so it keeps
+  meaning what it documents.
+- **Getting a URL in**: Android has no share-target integration for Emacs and
+  no URL-scheme handler for org-protocol, so a link has to come across by
+  hand. The port does wire Android's clipboard into Emacs's selection back
+  end, though, so `joe/eww-open-clipboard` (`C-c A e`, and a tool bar button)
+  turns copy-switch-yank-then-open into one tap.
 - **Do not** set `LD_LIBRARY_PATH` for the Termux binaries. That advice is
   explicitly retracted by the port's README: Termux embeds its library paths
   in its executables and the variable causes name collisions and linking

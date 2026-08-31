@@ -52,26 +52,51 @@
   ;; take the whole screen and push the text below the fold.
   (setq shr-max-image-proportion 0.4)
 
-  (defun joe/android-browse-external (url &rest _ignore)
+  (declare-function android-browse-url "android-win" (url &optional send))
+
+  ;; `android-browse-url' rather than a shell-out to `am'. It is native to the
+  ;; port (a wrapper over `android-browse-url-internal' in androidselect.c), so
+  ;; it needs no Termux, and it handles the URL-encoding and the file:// ->
+  ;; content:// conversion that a hand-built `am' command line does not.
+  ;;
+  ;; The wrapper is not decoration. `android-browse-url' takes (URL &optional
+  ;; SEND), where SEND non-nil means "offer this to a mail or messaging app"
+  ;; instead of "open it". `browse-url-secondary-browser-function' passes
+  ;; NEW-WINDOW as its second argument, so binding the raw function would turn
+  ;; every new-window request into a share sheet. Swallow the rest.
+  (defun joe/android-browse-external (url &rest _)
     "Open URL in Android's default browser, leaving eww behind.
 For the pages eww cannot render -- anything that is really an
-application rather than a document. Shells out to Android's `am',
-which comes from Termux, so this needs the shared-UID (`termux/')
-APK; without it there is no `am' on `exec-path' and the command
-reports as much rather than failing silently.
-
-The scheme is not optional: `am' errors on a bare host name, so
-\"example.com\" is rejected where \"https://example.com\" works."
+application rather than a document."
     (interactive
      ;; In eww, act on the page being read -- no prompt. Elsewhere, ask.
      (list (or (and (derived-mode-p 'eww-mode) (bound-and-true-p eww-current-url))
                (read-string "URL: " "https://"))))
-    (unless (executable-find "am")
-      (user-error "No `am' on `exec-path' -- Termux is not reachable from this APK"))
-    (unless (string-match-p "\\`[a-zA-Z][-+.a-zA-Z0-9]*:" url)
-      (user-error "`am' needs a scheme: try https://%s" url))
-    (call-process "am" nil 0 nil
-                  "start" "-a" "android.intent.action.VIEW" "-d" url))
+    (android-browse-url url))
+
+  (defun joe/eww-open-clipboard ()
+    "Open whatever is on the Android clipboard in eww.
+Android has no share-target integration for Emacs and no URL-scheme
+handler for org-protocol, so a link found in another browser has to come
+across by hand. The port wires Android's clipboard into Emacs's selection
+back end, though, which makes the paste half of that one command rather
+than a switch to a scratch buffer and a yank."
+    (interactive)
+    (let ((s (string-trim (or (ignore-errors (gui-get-selection 'CLIPBOARD)) ""))))
+      (when (string-empty-p s)
+        (user-error "Clipboard is empty"))
+      (eww s)))
+
+  ;; NOT `C-c E': joe-core.el already binds that to `joe/find-config-file', and
+  ;; joe-eww loads later, so it would have shadowed it silently and only on the
+  ;; phone. `C-c A' is the Android prefix (see `joe/android-toggle-text-
+  ;; conversion'), which is where a command that exists only here belongs.
+  (keymap-global-set "C-c A e" #'joe/eww-open-clipboard)
+  ;; And on the tool bar, because the point of this machine is not typing a
+  ;; five-tap chord to save a switch to another app.
+  (tool-bar-add-item "paste" #'joe/eww-open-clipboard 'joe-tb-clip
+                     :help "Open the clipboard URL in eww"
+                     :label "Clip->eww")
 
   ;; Set as the SECONDARY browser rather than rebound onto a key. eww's own `&'
   ;; (`eww-browse-with-external-browser') already dispatches through this

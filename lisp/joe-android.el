@@ -24,6 +24,35 @@
 The desktop's 120 assumes a monitor at arm's length. Fontaine, which
 sets that elsewhere, is skipped here -- see joe-ui.el.")
 
+(defvar joe/android-auto-dark nil
+  "When non-nil, let auto-dark follow the Android system theme.
+Off until verified on the device.  auto-dark CAN read the setting here
+-- its `termux\=' method shells out to `cmd uimode night\=', a plain
+Android command rather than anything from termux-api -- but two things
+have to hold, and neither is safe to assume:
+
+  - `cmd\=' lives in /system/bin and some of its subcommands want a
+    shell UID.  Check with
+        M-: (shell-command-to-string \"cmd uimode night\")
+    which must answer \"Night mode: yes\" or \"Night mode: no\".
+  - The poll is a subprocess.  joe-ui.el drops the interval to 60s
+    here; the desktop\='s 5s would be a battery decision, not a
+    cosmetic one.
+
+auto-dark will not select the method by itself: its detector requires
+`system-type\=' to be gnu/linux, which is true of a terminal Emacs
+running INSIDE Termux but not of this APK, where it is `android\='.
+joe-ui.el therefore sets `auto-dark-detection-method\=' explicitly.")
+
+(defvar joe/android-notifications nil
+  "When non-nil, send `alert\=' notifications to Android's shade.
+Off until verified on the device.  The Emacs side is solid -- the port
+has a native `android-notifications-notify\=', so no Termux, no
+termux-api and no D-Bus -- but the useful part is org-alert\='s repeating
+timer, and a timer only fires while the process is alive.  Android doze
+suspends backgrounded apps, so exempt Emacs from battery optimisation
+and confirm alerts still arrive before relying on this.")
+
 (defvar joe/android-bind-volume-keys t
   "When non-nil, bind volume-up to `joe/android-run-dwim'.
 On by default, because it costs almost nothing. Emacs on Android
@@ -86,6 +115,22 @@ Set this to nil to leave both keys alone.")
   ;; Raise it until they are thumb-sized. This matters more than it sounds when
   ;; the tool bar IS the keyboard.
   (setq tool-bar-button-margin 12)
+
+;;;; Touch selection
+  ;; All three are off by default and all three are worth having. Selecting text
+  ;; with a fingertip is the single clumsiest thing about this machine, and
+  ;; character-granularity dragging on a phone is a losing game.
+  (setq touch-screen-word-select t)        ; drag after a long press takes whole
+                                           ; words, not characters
+  (setq touch-screen-extend-selection t)   ; tap point or mark to resume a region
+  (setq touch-screen-preview-select t)     ; show the selection in the echo area
+
+;;;; repeat-mode
+  ;; Built in since Emacs 28, and worth more here than on any desktop: after
+  ;; `C-x o' a bare `o' switches windows again, after `C-x {' a bare `{' keeps
+  ;; resizing. Every repeat is one modifier-bar round trip -- tap Ctrl, tap x,
+  ;; tap o -- that does not have to happen.
+  (repeat-mode 1)
 
   ;; Re-applied on every theme activation, not set once. joe-ui.el loads a
   ;; theme on a later idle timer than this file, and <f8> loads another every
@@ -194,6 +239,63 @@ back on restores whatever style this buffer had before."
   (require 'server)
   (unless (server-running-p)
     (server-start))
+
+;;;; Notifications
+  ;; The port defines `android-notifications-notify' in C (src/androidselect.c),
+  ;; so the notification shade is reachable with no Termux, no termux-api and no
+  ;; D-Bus. It takes :title :body :urgency :icon :group :replaces-id :actions
+  ;; :timeout :resident :on-action :on-close -- a notification can carry buttons
+  ;; that call back into Emacs.
+  ;;
+  ;; org-alert drives the `alert' package, and `alert' takes custom styles, so
+  ;; the whole job is one style that forwards to that function. See
+  ;; `joe/android-notifications' for why this is off by default: the Emacs half
+  ;; is sound, and Android doze is the part that is not.
+  (declare-function android-notifications-notify "androidselect.c")
+  (declare-function alert-define-style "alert")
+  (declare-function org-alert-enable "org-alert")
+  (defvar alert-default-style)
+
+  (defun joe/android--alert-notifier (info)
+    "Send the `alert' plist INFO to the Android notification shade."
+    (android-notifications-notify
+     :title (or (plist-get info :title) "Emacs")
+     :body (or (plist-get info :message) "")
+     ;; `alert' severities are urgent/high/moderate/normal/low/trivial;
+     ;; `android-notifications-notify' takes low/normal/critical.
+     :urgency (pcase (plist-get info :severity)
+                ((or 'urgent 'high) 'critical)
+                ((or 'low 'trivial) 'low)
+                (_ 'normal))
+     ;; One group, so a run of agenda alerts stacks instead of filling the
+     ;; shade with separate cards.
+     :group "org-agenda"))
+
+  (defun joe/android-enable-notifications ()
+    "Route `alert' to Android, and start org-alert's timer.
+Deferred rather than run at load: `org-alert' pulls in org, and requiring
+org eagerly would undo the idle-timer staging in init.el."
+    (interactive)
+    ;; Imperative install, not `:ensure t' inside a guard -- use-package
+    ;; resolves :ensure at macro-expansion time, so a guarded use-package form
+    ;; installs the package on every host that byte-compiles this file. Same
+    ;; reasoning as the notmuch/pdf-tools/jinx block in joe-core.el.
+    (unless (package-installed-p 'org-alert)
+      (unless package-archive-contents (package-refresh-contents))
+      (package-install 'org-alert))
+    (require 'org-alert)                        ; pulls in `alert' as well
+    (alert-define-style 'android
+                        :title "Android notification shade"
+                        :notifier #'joe/android--alert-notifier)
+    (setq alert-default-style 'android)
+    (setq org-alert-interval 300)                ; recheck every five minutes
+    (setq org-alert-notify-cutoff 10)            ; warn ten minutes ahead
+    (setq org-alert-notify-after-event-cutoff 30); and stop half an hour after
+    (org-alert-enable)
+    (message "Android notifications enabled"))
+
+  (when joe/android-notifications
+    (run-with-idle-timer 2 nil #'joe/android-enable-notifications))
 
 ;;;; Tool bar
   ;; `M-x' is reachable from the menu bar (Edit -> Execute Command) and always
