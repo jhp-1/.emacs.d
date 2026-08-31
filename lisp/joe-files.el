@@ -23,11 +23,14 @@ Hiding is just the absence of ls's -a flag, so flip it and re-list."
   (setq dired-recursive-copies 'always
         dired-recursive-deletes 'always
         delete-by-moving-to-trash t
-        ;; --group-directories-first is a GNU coreutils flag. On Android there
-        ;; may be no `ls' binary at all -- the APK ships no userland -- in
-        ;; which case joe-android.el switches dired over to ls-lisp, whose
-        ;; switch parsing is its own and does not know that flag
-        ;; (`ls-lisp-dirs-first' is the equivalent, and is set there).
+        ;; Android always lists directories with ls-lisp, whatever is on
+        ;; `exec-path': ls-lisp.el defaults
+        ;; `ls-lisp-use-insert-directory-program' to nil there, the same as on
+        ;; Windows. ls-lisp sanitises away long GNU options that have no short
+        ;; equivalent, so --group-directories-first is silently dropped rather
+        ;; than misparsed -- nothing breaks, listings just lose the grouping.
+        ;; Dropping it here keeps the value honest about what will happen;
+        ;; joe-android.el sets `ls-lisp-dirs-first', which is the equivalent.
         dired-listing-switches
         (if (bound-and-true-p joe/android-p) "-lh"
           "-lv --group-directories-first -h")

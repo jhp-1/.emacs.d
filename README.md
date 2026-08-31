@@ -150,11 +150,21 @@ inserted text instead of as commands. Nothing is misconfigured when that
 happens; it is the design.
 
 `joe/android-toggle-text-conversion` (`C-c A t`, and a tool bar button) flips
-`text-conversion-style` buffer-locally. With it off the IME sends real key
-events, so `org-use-speed-commands` works — `n`/`p`/`f`/`b`/`t`/`c` as bare
-letters at the start of a headline, which is the single largest ergonomic win
-available on this machine. The cost is predictive and swipe typing, which is
-why it is a toggle and not a setting.
+it. With text conversion off the IME sends real key events, so
+`org-use-speed-commands` works — `n`/`p`/`f`/`b`/`t`/`c` as bare letters at the
+start of a headline, which is the single largest ergonomic win available on
+this machine. The cost is predictive and swipe typing, which is why it is a
+toggle and not a setting.
+
+It calls `set-text-conversion-style`, **not** `setq-local`. That function's
+whole job over a plain assignment is what it does afterwards: it forces the
+input method in any window showing the buffer to stop and restart itself. A
+bare `setq-local` only changes what redisplay will do the next time it
+reconsiders the buffer, which for a toggle you just pressed is not now — the
+IME carries on swallowing keys and the command looks broken. The previous
+value is saved and restored rather than a constant written back, because there
+is no single correct "on" value: `text-mode` sets `t`, and the minibuffer
+wants `action`.
 
 Two related IME bugs, both documented upstream as IME bugs rather than Emacs
 bugs: point jumping to the start of the buffer after typing an opening paren,
@@ -175,7 +185,7 @@ recommended in write-ups.
 | `context-menu-mode` | Long-press becomes a real context menu. |
 | `server-start` | Puts Emacs in Android's "open with" dialog for text files. |
 | `initial-buffer-choice` | Lands on Dired in the notes directory rather than a scratch buffer. |
-| ls-lisp | Dired shells out to `ls`; without Termux there is no `ls` at all. `dired-listing-switches` drops `--group-directories-first` (a GNU coreutils flag ls-lisp cannot parse) — set canonically in `joe-files.el`, not in `joe-android.el`, because that file loads on a later idle timer and would overwrite it. |
+| `ls-lisp-dirs-first` | Emacs already lists directories with ls-lisp on Android — `ls-lisp-use-insert-directory-program` defaults to nil for `android` just as for `windows-nt`, so dired needs no `ls` and works without Termux. What is lost is `--group-directories-first`: ls-lisp sanitises away long GNU options with no short equivalent, so it is silently dropped (not misparsed). `ls-lisp-dirs-first` is the native equivalent. `dired-listing-switches` carries the Android branch in `joe-files.el`, which is its one canonical assignment — setting it from `joe-android.el` too would be a race, since `joe-files` loads on a later idle timer. |
 | Five tool bar buttons | M-x, eww, agenda, capture, text-conversion toggle. |
 | `shr-use-fonts` = nil, `shr-max-image-proportion` 0.4 | Phone-width reflow, and images that do not push the text below the fold. |
 | `eww-download-directory` = `/sdcard/Download/` | `~/Downloads` is Emacs's private app directory; nothing else on the phone can see a file put there. |
@@ -191,11 +201,17 @@ mechanism, so it errors and strands whichever theme loaded first —
 across a window boundary would switch windows), the nerd-icons packages, and
 openwith's mpv associations.
 
-`joe/android-bind-volume-keys` is **off by default**. Turning it on binds
-volume-up to `joe/android-run-dwim` (mode-dispatching: `C-c C-c` in org,
-reload in eww, visit in dired), at the price of the volume rocker no longer
-changing the volume while Emacs has focus. Volume-*down* is never bound —
-pressed in rapid succession it is the port's `C-g` (`android-quit-keycode`).
+`joe/android-bind-volume-keys` is **on by default**, because it costs almost
+nothing. Emacs on Android already reserves *both* volume keys — that is the
+default of `android-pass-multimedia-buttons-to-system`, and it is how the port
+gives you a `C-g` without a keyboard — so the rocker has already stopped
+adjusting the volume the moment Emacs has focus, bound or not. (The manual's
+own suggestion for changing the volume is to pull down the notification shade,
+which takes focus away from Emacs.) It binds volume-up to
+`joe/android-run-dwim`: mode-dispatching, `C-c C-c` in org, reload in eww,
+visit in dired. Volume-*down* is never bound — pressed in rapid succession it
+is the quit gesture, and it is the default of `android-quit-keycode`. Set the
+variable to nil to leave both keys alone.
 
 ### Storage — the part that bites
 
@@ -242,14 +258,19 @@ Port 8385 rather than the default 8384, which one author had trouble binding.
 
 - **Quit / `C-g`**: press volume-down in rapid succession
   (`android-quit-keycode`).
-- **Fonts**: `.ttf` files go in `~/fonts` — *not* a subdirectory, that tree is
-  not searched recursively. Drop a Nerd Font in there and `joe/no-icon-font-p`
-  in `early-init.el` can be set to nil to get the icon packages back. Ignore
+- **Fonts**: at startup Emacs enumerates TrueType fonts in `/system/fonts`,
+  `/product/fonts` and the `fonts` directory inside its home directory — so
+  `~/fonts`. Put files directly in it; the manual does not promise a recursive
+  search. Drop a Nerd Font in there and `joe/no-icon-font-p` in
+  `early-init.el` can be set to nil to get the icon packages back. Ignore
   Options → Set Default Font, an X-era vestige listing fonts that are not
   present.
 - **E-ink** (Boox etc.): Android reports no monochrome visual class, so
-  font-lock contrast is poor. `(setq android-display-depth 4)` — 2–8 for
-  grayscale, 1 for monochrome.
+  font-lock contrast is poor. Set the display depth to 2–8 for grayscale, 1
+  for monochrome — but check the variable's name with `C-h v` first. The
+  Emacs manual (emacs-30 branch *and* master) calls it
+  `android-display-planes`; the port's own SourceForge FAQ calls it
+  `android-display-depth`. The two disagree and only your build settles it.
 - **Getting a URL out of Emacs**: `browse-url-secondary-browser-function` is
   set to `joe/android-browse-external`, which hands the URL to Android's `am`
   (Termux required, and `am` errors on a bare hostname — the scheme is

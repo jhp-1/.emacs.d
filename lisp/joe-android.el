@@ -24,21 +24,32 @@
 The desktop's 120 assumes a monitor at arm's length. Fontaine, which
 sets that elsewhere, is skipped here -- see joe-ui.el.")
 
-(defvar joe/android-bind-volume-keys nil
+(defvar joe/android-bind-volume-keys t
   "When non-nil, bind volume-up to `joe/android-run-dwim'.
-Off by default, and the trade is worth stating plainly: Emacs and the
-system cannot both have the key. Turning this on means the volume
-rocker no longer changes the volume while Emacs has focus. Volume-DOWN
-is never bound here whatever this is set to -- pressing it in rapid
-succession is the port's `C-g', which is not a gesture to lose.")
+On by default, because it costs almost nothing. Emacs on Android
+already reserves BOTH volume keys for itself -- that is the default of
+`android-pass-multimedia-buttons-to-system', and it is how the port
+provides a `C-g' without a keyboard -- so the volume rocker has already
+stopped adjusting the volume the moment Emacs has focus, bound or not.
+The manual's own suggestion for changing the volume here is to pull
+down the notification shade, which takes focus away from Emacs.
 
-;; Declared, not set. These are defined by the Android build's C code and do
-;; not exist anywhere else, so without this the byte-compiler reports them as
-;; free variables on every other host -- and, worse, `setq-local' on an
-;; undeclared symbol would bind lexically rather than buffer-locally under
-;; `lexical-binding'. Same pattern as `eshell-buffer-name' in joe-tools.el.
+Volume-DOWN is never bound whatever this is set to: pressed in rapid
+succession it is the quit gesture, and it is the default of
+`android-quit-keycode'. Only volume-up is claimed.
+
+Set this to nil to leave both keys alone.")
+
+;; Declared, not set. `text-conversion-style' is defined by the Android build's
+;; C code and does not exist anywhere else, so without this the byte-compiler
+;; reports it as a free variable on every other host. Same pattern as
+;; `eshell-buffer-name' in joe-tools.el. `set-text-conversion-style' likewise
+;; lives in textconv.c, which is only built for ports that have an IME.
 (defvar text-conversion-style)
-(defvar android-pass-multimedia-buttons-to-system)
+(declare-function set-text-conversion-style "textconv.c" (value &optional after))
+
+(defvar-local joe/android--text-conversion-saved nil
+  "Value `text-conversion-style' held before this buffer last toggled it.")
 
 (when (bound-and-true-p joe/android-p)
 
@@ -106,21 +117,37 @@ succession is the port's `C-g', which is not a gesture to lose.")
   ;; and swipe typing. That is exactly the trade you want for a burst of
   ;; navigation and exactly the wrong one for writing a paragraph, so it is a
   ;; toggle rather than a setting.
+  ;;
+  ;; `set-text-conversion-style', NOT `setq-local'. Its whole job over a plain
+  ;; assignment is the second half: after setting the variable it forces the
+  ;; input method in any window showing this buffer to stop and restart itself.
+  ;; A bare `setq-local' changes what redisplay will do NEXT time it reconsiders
+  ;; the buffer, which for a toggle you just pressed is not now -- the IME keeps
+  ;; swallowing your keys and the command looks broken. Its own docstring warns
+  ;; the reset is expensive and that you should normally set the variable before
+  ;; the buffer is displayed; that caveat is about mode setup, not about an
+  ;; explicit toggle a human just asked for.
+  ;;
+  ;; The old value is saved and restored rather than a constant being written
+  ;; back. `text-mode' sets this to t and the minibuffer wants `action' (which
+  ;; makes the IME's Go/Done key run the buffer's action instead of inserting a
+  ;; newline), so there is no single correct "on" value to hardcode.
   (defun joe/android-toggle-text-conversion ()
     "Toggle Android text conversion in the current buffer.
 Off means the input method sends ordinary key events, so `org-mode'
 speed keys and other single-letter bindings fire instead of inserting
-themselves -- at the price of predictive input. On restores normal
-typing.
-
-If the input method does not notice the change immediately, toggling
-the on-screen keyboard off and on again forces it to re-read the state."
+themselves -- at the price of predictive and swipe input. Turning it
+back on restores whatever style this buffer had before."
     (interactive)
-    (setq-local text-conversion-style
-                (if text-conversion-style nil 'action))
-    (message "Text conversion %s%s"
-             (if text-conversion-style "on (typing)" "off (key events)")
-             (if text-conversion-style "" " — speed keys live")))
+    (if text-conversion-style
+        (progn
+          (setq joe/android--text-conversion-saved text-conversion-style)
+          (set-text-conversion-style nil))
+      (set-text-conversion-style (or joe/android--text-conversion-saved t)))
+    (message "Text conversion %s"
+             (if text-conversion-style
+                 "on — normal typing"
+               "off — key events, so speed keys fire")))
 
   (keymap-global-set "C-c A t" #'joe/android-toggle-text-conversion)
 
@@ -139,20 +166,26 @@ the on-screen keyboard off and on again forces it to re-read the state."
               (dired-noselect joe/notes-dir)
             (get-buffer-create "*scratch*"))))
 
-  ;; Dired shells out to `ls', and the APK ships no userland: without Termux on
-  ;; `exec-path' there is no `ls' at all and every dired buffer fails outright.
-  ;; ls-lisp reimplements the listing in Elisp -- slower, and entirely adequate
-  ;; for browsing a notes directory.
+  ;; Dired needs no help here, contrary to the obvious worry that the APK ships
+  ;; no `ls'. Emacs already handles it: ls-lisp.el defaults
+  ;; `ls-lisp-use-insert-directory-program' to
+  ;;     (not (memq system-type '(ms-dos windows-nt android)))
+  ;; so on Android the listing is generated in Elisp and no subprocess is
+  ;; involved, exactly as on Windows. Forcing that here would be redundant, and
+  ;; keying it off (executable-find "ls") would be actively wrong -- with Termux
+  ;; installed `ls' IS found, and Emacs still uses ls-lisp.
   ;;
-  ;; `dired-listing-switches' is NOT set here. It is a defcustom with one
-  ;; canonical assignment, in joe-files.el, which already drops
-  ;; --group-directories-first (a GNU coreutils flag ls-lisp does not parse) on
-  ;; Android. Setting it from here as well would be a race: joe-files.el loads
-  ;; on a later idle timer than this file and would simply overwrite it.
-  ;; `ls-lisp-dirs-first' is the ls-lisp equivalent of that flag.
-  (unless (executable-find insert-directory-program)
-    (require 'ls-lisp)
-    (setq ls-lisp-use-insert-directory-program nil)
+  ;; What IS lost is `--group-directories-first'. ls-lisp sanitises long GNU
+  ;; options away (it keeps only those with a short equivalent), so the flag is
+  ;; silently dropped rather than misparsed -- no breakage, just ungrouped
+  ;; listings. `ls-lisp-dirs-first' is its native equivalent and restores the
+  ;; desktop behaviour.
+  ;;
+  ;; `dired-listing-switches' is deliberately NOT set here. It has one canonical
+  ;; assignment, in joe-files.el, which carries the Android branch; setting it
+  ;; from here too would be a race, since that file loads on a later idle timer
+  ;; and would simply overwrite this.
+  (with-eval-after-load 'ls-lisp
     (setq ls-lisp-dirs-first t))
 
   ;; Makes Emacs appear in Android's "open with" dialog for text files, which
@@ -210,17 +243,23 @@ Dired: visit the file at point."
            (call-interactively #'eval-defun))
           (t (message "No action defined for %s" major-mode))))
 
+  ;; No need to touch `android-pass-multimedia-buttons-to-system': its default
+  ;; is nil, which is the value that makes Emacs keep the volume keys. Setting
+  ;; it non-nil would hand them to the system and cost the quit gesture. An
+  ;; earlier revision set it to nil "so Emacs can see the keys", which was a
+  ;; no-op resting on the variable meaning the opposite of what it does.
   (when joe/android-bind-volume-keys
-    ;; Emacs only sees these once it stops handing multimedia keys back to the
-    ;; system.
-    (setq android-pass-multimedia-buttons-to-system nil)
     (keymap-global-set "<volume-up>" #'joe/android-run-dwim))
 
 ;;;; Notes on things deliberately NOT configured here
-  ;; - `android-display-depth': for e-ink devices (Boox and friends), where
-  ;;   Android reports no monochrome visual class and font-lock colours come
-  ;;   out with poor contrast. Set it to 2-8 for grayscale, 1 for monochrome.
-  ;;   Irrelevant on an ordinary phone.
+  ;; - Display depth, for e-ink devices (Boox and friends), where Android
+  ;;   reports no monochrome visual class and font-lock colours come out with
+  ;;   poor contrast. 2-8 for grayscale, 1 for monochrome. Two names are in
+  ;;   circulation and they disagree: the Emacs manual (both the emacs-30
+  ;;   branch and master) documents `android-display-planes', while the port's
+  ;;   own SourceForge FAQ says `android-display-depth'. Check which one your
+  ;;   build actually has with `C-h v' before setting either. Irrelevant on an
+  ;;   ordinary phone.
   ;; - `android-intercept-control-space': only needed if the IME swallows
   ;;   `C-SPC' before Emacs sees it. Left at its default until it bites.
   ;; - Fonts: drop .ttf files in ~/fonts -- NOT a subdirectory, that tree is

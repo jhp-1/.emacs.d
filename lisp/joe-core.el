@@ -60,11 +60,12 @@
 ;; setting `native-comp-jit-compilation' to nil does NOT cover this — the whole
 ;; point of failure 1 is that compile-angel ignores that variable.
 ;;
-;; Also off on Android, for cost rather than correctness: the APK is built
-;; without libgccjit, so `native-comp-available-p' is nil and failure 1 cannot
-;; arise, but byte-compiling every library on load is minutes of phone CPU (and
-;; battery) to save a fraction of a second of load time. package.el's own
-;; compile-on-install already covers the packages that matter.
+;; Also off on Android, for cost rather than correctness: byte-compiling every
+;; library on load is minutes of phone CPU (and battery) to save a fraction of
+;; a second of load time, and package.el's own compile-on-install already
+;; covers the packages that matter. Whether failure 1 can arise there depends
+;; on whether the APK carries libgccjit — check `native-comp-available-p' on
+;; the device rather than assuming; it does not change the decision here.
 (use-package compile-angel
   :ensure t
   :unless (or (bound-and-true-p joe/noexec-home-p)
