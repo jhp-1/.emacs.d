@@ -18,9 +18,6 @@
   (setq x-gtk-use-system-tooltips nil))
 
 (add-to-list 'load-path (expand-file-name "lisp" user-emacs-directory))
-;; wsl.exe lives here; only meaningful on Windows
-(when (eq system-type 'windows-nt)
-  (add-to-list 'exec-path "C:/Windows/System32"))
 
 ;; Load startup profiling if needed
 ;; (require 'startup-profiling) ; Uncomment to enable profiling
@@ -55,8 +52,9 @@
                              (require 'joe-ui)
                              (require 'joe-files))))
 
-  ;; Org and bibliography are heavy on Windows (bib file read, org-element init,
-  ;; AV scanning) — defer them to just after startup so the daemon is ready fast.
+  ;; Org and bibliography are heavy (the bib file is read, org-element
+  ;; initialises) — defer them to just after startup so the daemon is ready
+  ;; fast.
   (run-with-idle-timer 0.1 nil
                        (lambda ()
                          (require 'joe-org-notes)

@@ -3,7 +3,8 @@
 ;; Defer garbage collection further back in the startup process
 (setq gc-cons-threshold most-positive-fixnum)
 
-;; Prevent font-cache compaction on every GC (big win on Windows with icons)
+;; Prevent font-cache compaction on every GC. Matters most where a buffer
+;; mixes many fonts, as an icon set does.
 (setq inhibit-compacting-font-caches t)
 
 ;;;; Android
@@ -54,7 +55,8 @@ than in a Storage Access Framework folder.")
 ;; Ignore X resources; its settings would be redundant with the other settings
 ;; in this file and can conflict with later config (particularly where the
 ;; cursor color is concerned).
-;; Guard: x-apply-session-resources doesn't exist on windows-nt.
+;; Guard: the function only exists on window systems that read X resources,
+;; so it is absent on Android.
 (when (fboundp 'x-apply-session-resources)
   (advice-add #'x-apply-session-resources :override #'ignore))
 
@@ -75,7 +77,7 @@ than in a Storage Access Framework folder.")
 ;; native-compiled .eln files cannot be dlopen'd from the user eln-cache, and
 ;; there is no GUI at all. Everything keyed off this constant is a no-op on
 ;; every other machine — an earlier revision set the native-comp variables
-;; unconditionally, which would also have disabled native-comp on Windows.
+;; unconditionally, which disabled native-comp on hosts that could use it.
 (defconst joe/console-appliance-p (string= (system-name) "x270")
   "Non-nil on the x270 console appliance (noexec /home, no window system).")
 

@@ -1,13 +1,10 @@
 ;;; joe-ui.el --- UI-related configuration -*- lexical-binding: t; -*-
 
 ;;;; Follow mouse
-;; Focus-follows-mouse conflicts with Windows' own focus system when using
-;; multiple frames; disable it there.
-;; Off on Android too, where there is no mouse to follow: the port synthesises
-;; mouse motion from touch events, so this turns an incidental drag of the
-;; thumb across a window boundary into a window switch.
-(when (not (or (eq system-type 'windows-nt)
-               (bound-and-true-p joe/android-p)))
+;; Off on Android, where there is no mouse to follow: the port synthesises
+;; mouse motion from touch events, so this would turn an incidental drag of
+;; the thumb across a window boundary into a window switch.
+(unless (bound-and-true-p joe/android-p)
   (setq mouse-autoselect-window t))
 
 ;;;; Cursor
@@ -15,7 +12,7 @@
 
 ;;;; Bell
 ;; Emacs dings on every trivial event (point hitting end of buffer, C-g in the
-;; minibuffer, isearch wrapping), which on Windows is the loud system alert
+;; minibuffer, isearch wrapping), and on some hosts that is the system alert
 ;; sound rather than a discreet beep.  `ring-bell-function' takes precedence
 ;; over `visible-bell', so pointing it at `ignore' silences the audible bell
 ;; and the screen flash together; `visible-bell' is pinned to nil so nothing
@@ -203,9 +200,9 @@
   ;; The trailing "-------" is not modus and not a theme: stock Emacs defaults
   ;; `mode-line-end-spaces' to (:eval (unless (display-graphic-p) "-%-")),
   ;; where %- means "fill the rest of the line with dashes". It is gated on
-  ;; display-graphic-p, which is exactly why it never appears in the GUI on
-  ;; Windows and only showed up here. The mode-line face already spans the
-  ;; full window width, so nothing needs filling.
+  ;; display-graphic-p, which is exactly why it never appears in a GUI and
+  ;; only showed up here. The mode-line face already spans the full window
+  ;; width, so nothing needs filling.
   (setq-default mode-line-end-spaces "")
 
   ;;;; Sunrise/sunset theme switching

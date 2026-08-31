@@ -3,9 +3,9 @@
 ;;;; jinx
 (use-package jinx
   :ensure nil
-  ;; jinx links libenchant, not aspell directly; on Nix the backend shows up as
-  ;; enchant-2, on the old Windows box as aspell. Accept either so spell-check
-  ;; activates on both without a per-host gate.
+  ;; jinx links libenchant, not aspell directly, and the backend surfaces
+  ;; under different names per host: enchant-2 on Nix, aspell elsewhere.
+  ;; Accept either, so spell-check activates without a per-host gate.
   :if (or (executable-find "enchant-2") (executable-find "aspell"))
   :hook (org-mode . jinx-mode)
   :bind
@@ -43,7 +43,7 @@
   (setq org-goto-max-level 3)
   (setq org-hide-block-startup t)
   (setq org-directory joe/notes-dir)
-  ;; Use joe/notes-dir so this works from both Windows and WSL Emacs.
+  ;; Use joe/notes-dir so that no host hardcodes a location.
 ;; Guarded: `directory-files-recursively' signals if the directory is absent,
 ;; and because this sits inside org's :config that would abort the entire
 ;; block - taking `org-capture-templates' and everything after it with it.
@@ -145,7 +145,7 @@ Lives in the `career/' project silo (git repo), not the notes root.")
 (use-package denote
   :ensure t
   :config
-  ;; joe/notes-dir resolves to d:/Notes on Windows, /mnt/d/Notes in WSL.
+  ;; joe/notes-dir resolves per host; see joe-core.el.
   (setq denote-directory (expand-file-name joe/notes-dir))
   (setq denote-dired-directories
         (list denote-directory

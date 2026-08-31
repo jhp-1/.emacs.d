@@ -149,8 +149,7 @@
   (add-hook 'completion-at-point-functions #'cape-elisp-block) ; org-babel src blocks
   :config
   ;; Word completion from a system word list, replacing the Ispell Capf turned
-  ;; off at the top of this file.  There is no word list on Windows, where this
-  ;; simply stays off.
+  ;; off at the top of this file.  Stays off wherever there is no word list.
   (when (and (stringp cape-dict-file) (file-readable-p cape-dict-file))
     (add-hook 'text-mode-hook #'joe/cape-dict-setup)))
 

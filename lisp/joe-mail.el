@@ -39,8 +39,7 @@
 ;; Hand the message to msmtp rather than opening an SMTP connection from Emacs:
 ;; msmtp already knows the account, and Emacs never sees the password.
 (setq message-send-mail-function #'message-send-mail-with-sendmail
-      sendmail-program (cond ((eq system-type 'windows-nt) "msmtp.cmd")
-                             (t "msmtp"))
+      sendmail-program "msmtp"
       ;; Never let Emacs pass "-f address" — msmtp picks the account itself
       ;; from the From: header, which is what --read-envelope-from does.
       message-sendmail-f-is-evil t
@@ -61,8 +60,7 @@
          ;; define them.  They are bound at the bottom of this file instead.
          ("C-c M" . notmuch))
   :config
-  (setq notmuch-command (cond ((eq system-type 'windows-nt) "notmuch.cmd")
-                              (t "notmuch")))
+  (setq notmuch-command "notmuch")
 
   ;; Gmail's SMTP server files a copy of everything it sends into
   ;; [Gmail]/Sent Mail by itself, and mbsync pulls that back down.  Letting

@@ -1,183 +1,126 @@
 # dotemacs
 
-One Emacs configuration; four machines that agree about nothing.
+This is one Emacs configuration for three machines.
 
-A Windows box that reaches Unix through `.cmd` wrappers. A NixOS desktop where
-half the packages arrive from the store instead. A ThinkPad X270 with no GUI, a
-`noexec` `/home`, and a grudge. And, lately, a phone.
+## Function
 
-It reads org, writes org, files org under a timestamp, and browses the web in a
-buffer. Everything else is negotiable — and on the phone, mostly negotiated
-away.
+The configuration does these tasks:
 
-```
-                          ,           ,
-                         /             \
-                        ((__-^^-,-^^-__))
-                         `-_---' `---_-'
-                          <__|o` 'o|__>
-                             \  `  /
-                             ): :(
-                             :o_o:
-                              "-"
-                        one gnu, four houses
+- It reads Org files and changes them.
+- It gives each new note a name that starts with a time stamp.
+- It shows web pages in an `eww` buffer.
 
-                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-                 ~~~   S  Y  N  C  T  H  I  N  G   ~~~
-               ~~~~~  a cloud, but one you can grep  ~~~~~
-                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-                   '  '  '  '  '  '  '  '  '  '  '
-                  .org  .org  .bib  .org  .org  .org
-                    '  '  '  '  '  '  '  '  '  '
-                     v     v     v     v     v
+All other functions are secondary. The telephone has only the tasks above.
 
-    ┌──────────────────────────────────────────────────────────────┐
-    │ >_  WINDOWS  --  the one that speaks .cmd                    │
-    ├──────────────────────────────────────────────────────────────┤
-    │                                                              │
-    │  C:\Users\Joe\bin\notmuch.cmd                                │
-    │       `--> wsl.exe --> notmuch --> your inbox, eventually    │
-    │                                                              │
-    │  d:/Notes    d:/Texts    d:/Noises                           │
-    │  w32-pipe-read-delay 0    <- magit sends its regards         │
-    │                                                              │
-    └──────────────────────────────────────────────────────────────┘
+## The machines
 
-           ╲______________________________________________________╱
-            ╲____________________________________________________╱
-                              ┌──────────┐
-                              └──────────┘
+The three machines are not the same. Each one has a constant that identifies
+it, and `early-init.el` sets these constants. A module reads the constant. A
+module does not examine the machine again.
 
-    ┌──────────────────────────────────────────────────────────────┐
-    │ (*)  NIXDESKTOP  --  everything is a derivation              │
-    ├──────────────────────────────────────────────────────────────┤
-    │                                                              │
-    │  emacsWithPackages ships pdf-tools, jinx and notmuch itself, │
-    │  so here they are :ensure nil -- MELPA cannot build the      │
-    │  native halves, and /home is noexec, so it could not load    │
-    │  them if it had.                                             │
-    │                                                              │
-    │  ~/Notes   ~/Texts   /mnt/media/Noises  (a spinning disk)    │
-    │                                                              │
-    └──────────────────────────────────────────────────────────────┘
+- **nixdesktop.** A NixOS workstation. Nix supplies pdf-tools, jinx and
+  notmuch. Thus these three packages use `:ensure nil`.
+- **x270.** A ThinkPad X270 with no window system. Its `/home` directory is
+  `noexec`, thus Emacs cannot load a `.eln` file. `solar.el` selects the theme
+  from the time of day.
+- **android.** A telephone with no keyboard. The tool bar, the menu bar and
+  the modifier bar are the input devices.
 
-           ╲______________________________________________________╱
-            ╲____________________________________________________╱
-                              ┌──────────┐
-                              └──────────┘
+## Structure
 
-    ┌──────────────────────────────────────────────────────────────┐
-    │ ###  x270  --  the console appliance, and it holds a grudge  │
-    ├──────────────────────────────────────────────────────────────┤
-    │                                                              │
-    │  x270 login: joe                                             │
-    │  $ emacs -nw                                                 │
-    │     no GUI ....... no window system. not hidden. absent.     │
-    │     no icons ..... kmscon has no font fallback               │
-    │     no .eln ...... /home is noexec; dlopen says no           │
-    │     no auto-dark . so the sun decides it (solar.el)          │
-    │                                                              │
-    └──────────────────────────────────────────────────────────────┘
-
-    ┌──────────────────────────────────────────────────────────────┐
-    │  [`][1][2][3][4][5][6][7][8][9][0][-][=][ <--- ]             │
-    │  [Tab][Q][W][E][R][T][Y][U][I][O][P][ [ ][ ] ]               │
-    │  [Ctl][A][S][D][F][G][H][J][K][L][;]['][ Enter ]             │
-    │  [Shft][Z][X][C][V][B][N][M][,][.][/][  Shift  ]             │
-    │  [Fn][^][Alt][         space         ][Alt][<][v][>]         │
-    └──────────────────────────────────────────────────────────────┘
-
-                    ╭───────────────────────────╮
-                    │ .:|  ((o))      [###] 87% │
-                    ├───────────────────────────┤
-                    │ File Edit Options Tools   │  <- yes, really
-                    ├───────────────────────────┤
-                    │ * TODO  ring the bell     │
-                    │   SCHEDULED: <today>      │
-                    │ * DONE  feed the gnu      │
-                    │ ** [X] twice, it was rude │
-                    │                           │
-                    │ ~                         │
-                    │ ~                         │
-                    ├───────────────────────────┤
-                    │ -:**- tasks.org   L3   ;  │
-                    ├───────────────────────────┤
-                    │ [C][M][S][A][Sup][Shift]  │  <- modifier-bar-mode
-                    │ [M-x][www][cal][+][keys]  │  <- tool-bar, at the bottom
-                    ╰───────────────────────────╯
-                          ANDROID  --  org + eww
-                      volume-down, three times, fast = C-g
-```
+`init.el` loads `joe-core` and `joe-completion` immediately. Idle timers load
+the other modules. The image below shows the modules and the sequence.
 
 ```
-╔═══════════════════════════════════════════════════════════════════╗
-║  lisp/   --   the card catalogue                                  ║
-╠═══════════════════════════════════════════════════════════════════╣
-║ ┌───────────────────────────────────────────────────────────────┐ ║
-║ │  joe-core            packages, paths, load-bearing tedium  (o)│ ║
-║ └───────────────────────────────────────────────────────────────┘ ║
-║ ┌───────────────────────────────────────────────────────────────┐ ║
-║ │  joe-completion      vertico, corfu, consult, embark       (o)│ ║
-║ └───────────────────────────────────────────────────────────────┘ ║
-║ ┌───────────────────────────────────────────────────────────────┐ ║
-║ │  joe-org-notes       org, denote, transclusion. the point. (o)│ ║
-║ └───────────────────────────────────────────────────────────────┘ ║
-║ ┌───────────────────────────────────────────────────────────────┐ ║
-║ │  joe-research        citar, pdf-tools, a bibliography      (o)│ ║
-║ └───────────────────────────────────────────────────────────────┘ ║
-║ ┌───────────────────────────────────────────────────────────────┐ ║
-║ │  joe-counting-house  capture, a menu, a garden walk        (o)│ ║
-║ └───────────────────────────────────────────────────────────────┘ ║
-║ ┌───────────────────────────────────────────────────────────────┐ ║
-║ │  joe-files           dired, ibuffer, hiding your dotfiles  (o)│ ║
-║ └───────────────────────────────────────────────────────────────┘ ║
-║ ┌───────────────────────────────────────────────────────────────┐ ║
-║ │  joe-ui              themes, modeline, fonts, olivetti     (o)│ ║
-║ └───────────────────────────────────────────────────────────────┘ ║
-║ ┌───────────────────────────────────────────────────────────────┐ ║
-║ │  joe-eww             the web, but calm                     (o)│ ║
-║ └───────────────────────────────────────────────────────────────┘ ║
-║ ┌───────────────────────────────────────────────────────────────┐ ║
-║ │  joe-android         a phone that thinks it is a terminal  (o)│ ║
-║ └───────────────────────────────────────────────────────────────┘ ║
-║ ┌───────────────────────────────────────────────────────────────┐ ║
-║ │  joe-tools           magit, rg, shells, timers             (o)│ ║
-║ └───────────────────────────────────────────────────────────────┘ ║
-║ ┌───────────────────────────────────────────────────────────────┐ ║
-║ │  joe-elfeed          feeds, tagged like a librarian        (o)│ ║
-║ └───────────────────────────────────────────────────────────────┘ ║
-║ ┌───────────────────────────────────────────────────────────────┐ ║
-║ │  joe-mail            notmuch, mbsync, msmtp                (o)│ ║
-║ └───────────────────────────────────────────────────────────────┘ ║
-║ ┌───────────────────────────────────────────────────────────────┐ ║
-║ │  joe-media           mpv, playing rain at you              (o)│ ║
-║ └───────────────────────────────────────────────────────────────┘ ║
-║ ┌───────────────────────────────────────────────────────────────┐ ║
-║ │  joe-python          org-babel, but numerate               (o)│ ║
-║ └───────────────────────────────────────────────────────────────┘ ║
-║ ┌───────────────────────────────────────────────────────────────┐ ║
-║ │  joe-ai              the robot drawer                      (o)│ ║
-║ └───────────────────────────────────────────────────────────────┘ ║
-╚═══════════════════════════════════════════════════════════════════╝
+╔════════════════════════════╡ d o t e m a c s ╞═════════════════════════════╗
+║                                                                            ║
+║                               ,           ,                                ║
+║                              /             \                               ║
+║                             ((__-^^-,-^^-__))                              ║
+║                              `-_---' `---_-'                               ║
+║                               <__|o` 'o|__>                                ║
+║                                  \  `  /                                   ║
+║                                   ): :(                                    ║
+║                                   :o_o:                                    ║
+║                                    "-"                                     ║
+║                                                                            ║
+║                     one configuration, three machines                      ║
+║                                                                            ║
+║                                  ~  ~  ~                                   ║
+║              .--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~--.              ║
+║         .-~                                                    ~-.         ║
+║        (             S   Y   N   C   T   H   I   N   G            )        ║
+║         `-.                                                    .-'         ║
+║              `--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~--'              ║
+║            |                         |                         |           ║
+║          .org                      .org                      .org          ║
+║            |                         |                         |           ║
+║            v                         v                         v           ║
+║                                                                            ║
+║                           ┌────────────────────┐       ╭──────────────╮    ║
+║ ┌────────────────────┐    │ x270               │       │ .:| ((o))  87│    ║
+║ │ nixdesktop         │    ├────────────────────┤       ├──────────────┤    ║
+║ ├────────────────────┤    │ $ emacs -nw        │       │ File Edit    │    ║
+║ │ ~/Notes            │    │                    │       ├──────────────┤    ║
+║ │ ~/Texts            │    │ no window system   │       │ * TODO  ring │    ║
+║ │ /mnt/media/Noises  │    │ no icons           │       │   the bell   │    ║
+║ │                    │    │ no .eln files      │       │ * DONE  feed │    ║
+║ │ Nix supplies       │    │                    │       │   the gnu    │    ║
+║ │ pdf-tools, jinx    │    │ solar.el sets the  │       │ ~            │    ║
+║ │ and notmuch, so    │    │ theme              │       ├──────────────┤    ║
+║ │ they are           │    └────────────────────┘       │ -:**- tasks  │    ║
+║ │ :ensure nil        │    ┌────────────────────┐       ├──────────────┤    ║
+║ └────────────────────┘    │ [][][][][][][][][] │       │[C][M][S][A]  │    ║
+║   ╲________________╱      │ [][][][][][][][][] │       │[M-x][www][+] │    ║
+║      ┌──────────┐         │ [__][_______][___] │       ╰──────────────╯    ║
+║      └──────────┘         └────────────────────┘           android         ║
+║                                                                            ║
+║                                  ·  ·  ·                                   ║
+║                                                                            ║
+║  ╭──────────────────────────────────────────────────────────────────────╮  ║
+║  │ lisp/                                                                │  ║
+║  ├──────────────────────────────────────────────────────────────────────┤  ║
+║  │ joe-core            Packages, paths, and shared constants.      [==] │  ║
+║  │ joe-completion      Vertico, Corfu, Consult, and Embark.        [==] │  ║
+║  │ joe-org-notes       Org mode, Denote, and capture templates.    [==] │  ║
+║  │ joe-research        Citar, pdf-tools, and the bibliography.     [==] │  ║
+║  │ joe-counting-house  Capture commands and a transient menu.      [==] │  ║
+║  │ joe-files           Dired and Ibuffer.                          [==] │  ║
+║  │ joe-ui              Themes, the mode line, and fonts.           [==] │  ║
+║  │ joe-eww             The eww web browser.                        [==] │  ║
+║  │ joe-android         Touchscreen input for the telephone.        [==] │  ║
+║  │ joe-tools           Magit, rg, Eshell, and timers.              [==] │  ║
+║  │ joe-elfeed          Feeds, with a controlled tag vocabulary.    [==] │  ║
+║  │ joe-mail            Notmuch, mbsync, and msmtp.                 [==] │  ║
+║  │ joe-media           mpv plays the sound files.                  [==] │  ║
+║  │ joe-python          Python blocks in Org mode.                  [==] │  ║
+║  │ joe-ai              Interfaces to AI assistants.                [==] │  ║
+║  ╰──────────────────────────────────────────────────────────────────────╯  ║
+║                                                                            ║
+║                                  ·  ·  ·                                   ║
+║                                                                            ║
+║  ╭──────────────────────────────────────────────────────────────────────╮  ║
+║  │ init.el                                                              │  ║
+║  ├──────────────────────────────────────────────────────────────────────┤  ║
+║  │  0.0s              0.1s              0.5s              1.0s          │  ║
+║  │   ●━━━━━━━━━━━━━━━━━●━━━━━━━━━━━━━━━━━●━━━━━━━━━━━━━━━━━●            │  ║
+║  │   ┃                 ┃                 ┃                 ┃            │  ║
+║  │   joe-core          joe-org-notes     joe-ui            joe-tools    │  ║
+║  │   joe-completion    joe-research      joe-files         joe-eww      │  ║
+║  │   joe-android *     joe-python                          joe-ai       │  ║
+║  │                     joe-counting-house                  joe-elfeed   │  ║
+║  │                                                         joe-mail     │  ║
+║  │                                                         joe-media    │  ║
+║  │                                                                      │  ║
+║  │   * The telephone only, and immediately. There, the tool bar is the  │  ║
+║  │     keyboard. The 1.0s group does not load on the telephone.         │  ║
+║  ╰──────────────────────────────────────────────────────────────────────╯  ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
 ```
 
-```
-  0.0s              0.1s              0.5s              1.0s
-   ●━━━━━━━━━━━━━━━━━●━━━━━━━━━━━━━━━━━●━━━━━━━━━━━━━━━━━●
-   ┃                 ┃                 ┃                 ┃
-   joe-core          joe-org-notes     joe-ui            joe-tools
-   joe-completion    joe-research      joe-files         joe-eww
-   joe-android *     joe-python                          joe-ai
-                     joe-counting-house                    joe-elfeed
-                                                         joe-mail
-                                                         joe-media
+## More data
 
-   * Android only, and eagerly, off the timetable altogether: the tool
-     bar IS the keyboard there, and a phone cannot spend its first
-     second unable to press Ctrl. On Android the 1.0s platform is
-     closed and boarded up. Nothing stops there.
-```
-
-The long version, for when a machine misbehaves and you want to know whether it
-was on purpose: **[NOTES.md](NOTES.md)**. Though the real documentation lives in
-the module comments, next to the code that earned it.
+`NOTES.md` gives the full description of each machine. The comments in each
+module give more data than `NOTES.md`, and they are adjacent to the code that
+they explain.

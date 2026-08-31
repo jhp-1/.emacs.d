@@ -10,16 +10,24 @@ editing. This file is the map.
 
 ## Platform notes
 
-Runs on native Windows Emacs (30+), Linux/WSL, a locked-down console appliance
-and an Android phone (both below).
-
-On Windows, Unix tools (notmuch, mbsync, msmtp) are called through `.cmd`
-wrapper scripts in `C:/Users/Joe/bin` that delegate to WSL via `wsl.exe`.
+Runs on Emacs 30+ on three machines: a NixOS desktop, a locked-down console
+appliance and an Android phone (the last two below).
 
 Path constants live in `joe-core.el` (`joe/notes-dir`, `joe/texts-dir`,
-`joe/noises-dir`) rather than being hardcoded per module. Note that the
-non-Windows branch historically assumed WSL (`/mnt/d/...`), which is not
-correct on bare Linux — hence the appliance branch below.
+`joe/noises-dir`) rather than being hardcoded per module. Their fallback
+branch is `/mnt/d/...`, a leftover from a decommissioned host that no current
+machine uses; every live machine matches an earlier branch of the `cond`.
+
+A Windows host was retired in Aug 2026, and its configuration went with it:
+the `.cmd` wrappers that bridged notmuch/mbsync/msmtp to WSL, the explicit
+`exec-path` and `HOME` handling, the `w32-pipe-*` tuning, the PowerShell timer
+sound, ghostel, the msys64 epdfinfo and pdftotext paths, the 8.3 short-name
+fallback in `joe/--native-path`, the case-insensitive branch of
+`joe/--dedup-paths`, and the two WSL path-translation helpers (which nothing
+called). Two things it left behind are deliberate, and both are noted where
+they live: `joe/--citekey-unsafe-rx` still strips the full hostile set,
+because the library syncs to `/sdcard` on Android; and the daemon-exit logger
+in `joe-core.el` is kept because it costs nothing until something dies.
 
 ## The console appliance (`x270`)
 
@@ -42,7 +50,6 @@ changes behaviour on any other machine**. What it turns off, and why:
 | `auto-dark` | No OS appearance setting to poll on a TTY. `modus-operandi` is loaded explicitly instead. |
 | `pulsar` | No sub-cell rendering in a TTY, so the pulse is a full-width bar rather than a fade. |
 | `pdf-tools`, `saveplace-pdf-view` | Graphical, and native modules can't be built or loaded here. |
-| `ghostel` | Windows-only (powershell.exe, a native `.so`). Wrapped in `when` rather than `:if`, because use-package processes `:ensure` *before* `:if`. |
 
 And what it turns **on** or adjusts:
 

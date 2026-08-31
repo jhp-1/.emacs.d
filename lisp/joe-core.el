@@ -187,18 +187,15 @@ initial non-graphical frame.  Skips the update unless both are real colors."
       (setq-default pdf-view-midnight-colors (cons fg bg)))))
 
 ;;;; Cross-platform path constants
-;; Used by joe-org-notes.el, joe-research.el etc. so they don't hardcode drive letters.
-;; NB: the non-Windows branch assumed WSL (/mnt/d/...). On the x270 appliance
-;; that path does not exist, and `directory-files-recursively' on a missing
-;; directory signals - which aborted org's whole :config block and left
-;; `org-capture-templates' void, cascading into zotra/citar failures.
-;; The nixdesktop branches are the old Windows D: drive, carried over intact but
-;; mounted at /mnt/media rather than given a drive letter. Without them these
-;; fall through to the WSL default /mnt/d/... , which does not exist there —
-;; costing the agenda (the `file-directory-p' guard below catches that) and
-;; silently pointing `denote-directory' at a nonexistent tree (which it does not).
-;; Keyed on `joe/nix-emacs-p' the same way the appliance keys on its own
-;; constant: it identifies the machine, which is what actually decides the path.
+;; Used by joe-org-notes.el, joe-research.el and others, so that no module
+;; hardcodes a location. Each host keys off the constant that identifies it,
+;; because the machine is what decides the path.
+;;
+;; The /mnt/d default is a leftover from a decommissioned host. It does not
+;; exist on the appliance, and `directory-files-recursively' signals an error
+;; on a directory that is absent. That error aborted org's whole :config block
+;; and left `org-capture-templates' void, which then broke zotra and citar. The
+;; `file-directory-p' guard in joe-org-notes.el prevents this now.
 ;;
 ;; Notes and Texts have since moved off that drive onto the encrypted SSD: they
 ;; are small but latency-sensitive (org-agenda opens ~147 files at startup, and
@@ -239,7 +236,6 @@ Termux's home when it is reachable, else Emacs's own home."
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/notes"))
         ((bound-and-true-p joe/android-p) (joe/android-dir "Notes"))
         ((bound-and-true-p joe/nix-emacs-p) (expand-file-name "~/Notes"))
-        ((eq system-type 'windows-nt) "d:/Notes")
         (t "/mnt/d/Notes"))
   "Root directory for Denote notes.")
 
@@ -247,7 +243,6 @@ Termux's home when it is reachable, else Emacs's own home."
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/texts"))
         ((bound-and-true-p joe/android-p) (joe/android-dir "Texts"))
         ((bound-and-true-p joe/nix-emacs-p) (expand-file-name "~/Texts"))
-        ((eq system-type 'windows-nt) "d:/Texts")
         (t "/mnt/d/Texts"))
   "Root directory for PDFs and bibliography.")
 
@@ -255,29 +250,15 @@ Termux's home when it is reachable, else Emacs's own home."
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/noises"))
         ((bound-and-true-p joe/android-p) (joe/android-dir "Noises"))
         ((bound-and-true-p joe/nix-emacs-p) "/mnt/media/Noises")
-        ((eq system-type 'windows-nt) "d:/Noises")
         (t "/mnt/d/Noises"))
   "Root directory for ambient/background sound files.")
 
-;;;; WSL <-> Windows path translation helpers
-(defun joe/wsl-to-win-path (path)
-  "Convert a WSL path like /mnt/d/foo to a Windows path d:/foo."
-  (replace-regexp-in-string
-   "^/mnt/\\([a-z]\\)/"
-   (lambda (_m) (concat (upcase (match-string 1)) ":/"))
-   path))
-
-(defun joe/win-to-wsl-path (path)
-  "Convert a Windows path like d:/foo to a WSL path /mnt/d/foo."
-  (replace-regexp-in-string
-   "\\([A-Za-z]\\):[\\/]"
-   (lambda (_m) (concat "/mnt/" (downcase (match-string 1)) "/"))
-   path))
-
 ;;;; Environment settings
-;; On Windows, PATH and exec-path are managed explicitly in joe-tools.el.
-;; These Linux-only tweaks add the active nvm Node and ~/.local/bin to the
-;; path for Linux/WSL Emacs instances only.
+;; Add the active nvm Node and ~/.local/bin to the path. Linux only: Android
+;; gets its PATH from early-init.el, which prepends Termux's bin.
+;;
+;; Two path-translation helpers used to live here. They retired with the host
+;; whose drive letters they translated, and nothing called them.
 (when (memq system-type '(gnu gnu/linux gnu/kfreebsd))
   ;; Dynamically find the newest installed nvm Node instead of a hardcoded version.
   (let* ((nvm-root (expand-file-name "~/.nvm/versions/node"))
@@ -327,9 +308,9 @@ Termux's home when it is reachable, else Emacs's own home."
   (recentf-filename-handlers '(abbreviate-file-name))
   (recentf-max-saved-items 400)
   (recentf-max-menu-items 400)
-  ;; Not a literal "~/.emacs.d/recentf": joe-tools.el resets HOME on Windows,
-  ;; and this file is loaded first, so the tilde would expand against the old
-  ;; HOME and strand the history somewhere else.
+  ;; `locate-user-emacs-file' rather than a literal "~/.emacs.d/recentf": it
+  ;; resolves against `user-emacs-directory' instead of $HOME, so the history
+  ;; follows the configuration rather than the environment.
   (recentf-save-file (locate-user-emacs-file "recentf")))
 
 ;;;; Global keybindings and miscellaneous settings
@@ -396,7 +377,7 @@ Version: 2022-04-05"
 (setq initial-buffer-choice 'xah-new-empty-buffer)
 
 ;;;; Jump to this configuration
-;; `C-c e' is eww (joe-tools.el), so the config lands on the shifted key.
+;; `C-c e' is eww (joe-eww.el), so the config lands on the shifted key.
 ;; Goes through `completing-read' rather than opening a fixed file, so vertico
 ;; and orderless do the narrowing: "mail" reaches joe-mail.el in four keys.
 (defun joe/find-config-file ()
@@ -435,11 +416,11 @@ Version: 2022-04-05"
   (setq aw-dispatch-always t))
 
 ;;;; Daemon exit diagnostics
-;; The daemon has been dying with no Windows crash dump and no Code
-;; Integrity block logged against it, so capture whatever Emacs itself
-;; knows at exit time.  Only fires for graceful exits (kill-emacs called
-;; for any reason) -- an external TerminateProcess kill won't run this,
-;; and that absence is itself a useful signal.
+;; Added while chasing a daemon that died leaving nothing in the system logs:
+;; capture whatever Emacs itself knows at exit time.  Only fires for graceful
+;; exits (kill-emacs called for any reason) -- a kill from outside the process
+;; will not run this, and that absence is itself a useful signal.  Kept after
+;; that investigation closed, because it costs nothing until something dies.
 (setq server-log t)
 
 (defun joe/log-daemon-exit ()

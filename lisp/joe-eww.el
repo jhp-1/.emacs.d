@@ -3,9 +3,9 @@
 ;; Split out of joe-tools.el. eww is the one thing in this configuration that
 ;; needs no external program whatsoever, which matters on Android: it is half
 ;; of what that machine is for, while everything else joe-tools.el configures
-;; (magit, rg, ghostel, eshell, bluetooth) is either unavailable there or
-;; actively breaks -- bluetooth `require's dbus at load time, so reaching eww
-;; through joe-tools.el would have failed outright.
+;; (magit, rg, eshell, bluetooth) is either unavailable there or actively
+;; breaks -- bluetooth `require's dbus at load time, so reaching eww through
+;; joe-tools.el would have failed outright.
 
 ;;;; eww
 (use-package eww
