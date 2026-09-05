@@ -97,6 +97,9 @@ touchscreen are not decoration but the only way to press Ctrl at all.
 
 ### Installing
 
+Step by step, with the checks: **[ANDROID.md](ANDROID.md)**. The short
+version follows.
+
 Use a build from the `termux/` subdirectory of
 <https://sourceforge.net/projects/android-ports-for-gnu-emacs/files/>: those
 set `sharedUserId` to `com.termux`, which is what lets Emacs execute Termux's

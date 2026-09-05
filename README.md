@@ -67,5 +67,6 @@ Each machine has a constant that identifies it, and `early-init.el` sets them.
 ╚════════════════════════════════════════════════════════════════════════════╝
 ```
 
-`NOTES.md` holds the long version. The comments in each module hold more than
-that, and they sit beside the code that they explain.
+`ANDROID.md` tells you how to install this on a telephone. `NOTES.md` holds
+the long version of everything else. The comments in each module hold more
+than that, and they sit beside the code that they explain.
