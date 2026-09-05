@@ -3,13 +3,48 @@
 ;; Defer garbage collection further back in the startup process
 (setq gc-cons-threshold most-positive-fixnum)
 
-;; Prevent font-cache compaction on every GC (big win on Windows with icons)
+;; Prevent font-cache compaction on every GC. Matters most where a buffer
+;; mixes many fonts, as an icon set does.
 (setq inhibit-compacting-font-caches t)
+
+;;;; Android
+;; Defined here, above everything that consults it, because the very first
+;; thing it changes is the frame alist below -- by the time init.el is read the
+;; initial frame already exists.
+(defconst joe/android-p (eq system-type 'android)
+  "Non-nil on the native Android port (GNU Emacs 30+ APK).")
+
+(defconst joe/android-termux-home "/data/data/com.termux/files/home"
+  "Termux's Unix home, when Emacs and Termux share a UID.
+Only reachable from the `termux/' APK builds, which set
+`sharedUserId' to com.termux.  Files here -- unlike anything under
+/content or /assets -- are visible to SUBPROCESSES as well as to
+Emacs's own file primitives, which is why notes belong here rather
+than in a Storage Access Framework folder.")
+
+;; Put Termux's bin on PATH so Emacs has git, rg, aspell, `am', ls -- anything
+;; at all, really; the APK ships no userland of its own.  Per the port's README
+;; this is PATH and `exec-path' ONLY: the advice to also set LD_LIBRARY_PATH has
+;; been explicitly retracted upstream, because Termux embeds its library paths
+;; in its executables and adding the variable causes name collisions and
+;; bizarre linking errors.  Guarded on the directory existing, so a non-Termux
+;; APK (or a Termux that has not been installed yet) is a no-op rather than a
+;; broken PATH.
+(when joe/android-p
+  (let ((bin "/data/data/com.termux/files/usr/bin"))
+    (when (file-directory-p bin)
+      (setenv "PATH" (format "%s:%s" bin (getenv "PATH")))
+      (push bin exec-path))))
 
 ;; Prevent the glimpse of un-styled Emacs by disabling these UI elements early.
 (setq load-prefer-newer t)
-(push '(menu-bar-lines . 0) default-frame-alist)
-(push '(tool-bar-lines . 0) default-frame-alist)
+;; ...except on Android, where the tool bar and menu bar are not chrome, they
+;; are the input device.  There is no Ctrl and no Alt on a soft keyboard, so
+;; `M-x' lives at Edit -> Execute Command and the modifier bar (see
+;; joe-android.el) is the only way to type a modified key sequence at all.  The
+;; port's own README is blunt that turning these off on Android is unwise.
+(push (cons 'menu-bar-lines (if joe/android-p 1 0)) default-frame-alist)
+(push (cons 'tool-bar-lines (if joe/android-p 1 0)) default-frame-alist)
 (push '(vertical-scroll-bars) default-frame-alist)
 
 ;; Resizing the Emacs frame can be a terribly expensive part of changing the
@@ -20,7 +55,8 @@
 ;; Ignore X resources; its settings would be redundant with the other settings
 ;; in this file and can conflict with later config (particularly where the
 ;; cursor color is concerned).
-;; Guard: x-apply-session-resources doesn't exist on windows-nt.
+;; Guard: the function only exists on window systems that read X resources,
+;; so it is absent on Android.
 (when (fboundp 'x-apply-session-resources)
   (advice-add #'x-apply-session-resources :override #'ignore))
 
@@ -41,7 +77,7 @@
 ;; native-compiled .eln files cannot be dlopen'd from the user eln-cache, and
 ;; there is no GUI at all. Everything keyed off this constant is a no-op on
 ;; every other machine — an earlier revision set the native-comp variables
-;; unconditionally, which would also have disabled native-comp on Windows.
+;; unconditionally, which disabled native-comp on hosts that could use it.
 (defconst joe/console-appliance-p (string= (system-name) "x270")
   "Non-nil on the x270 console appliance (noexec /home, no window system).")
 
@@ -74,6 +110,16 @@
   ;; Run packages as byte-code; .elc is interpreted, .eln would be dlopen'd.
   (setq native-comp-jit-compilation nil)
   (setq native-comp-enable-subr-trampolines nil))
+
+;; Hosts with no nerd-icons-patched font, where the icon packages render a row
+;; of replacement boxes rather than glyphs.  Two unrelated causes, same symptom
+;; and same fix, so they share a constant:
+;;   - the x270's console (kmscon, built without pango) has no fontconfig
+;;     fallback at all, so the one configured font must carry the glyph;
+;;   - Android searches only ~/fonts, non-recursively, and ships nothing
+;;     patched.  Drop a Nerd Font .ttf in there and this can be set to nil.
+(defconst joe/no-icon-font-p (or joe/console-appliance-p joe/android-p)
+  "Non-nil where no nerd-icons-patched font can be assumed.")
 
 (provide 'early-init)
 ;;; early-init.el ends here

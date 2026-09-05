@@ -11,8 +11,7 @@
   (org-babel-do-load-languages
    'org-babel-load-languages
    (append org-babel-load-languages '((python . t))))
-  (setq org-babel-python-command
-        "C:/Users/Joe/AppData/Local/Programs/Python/Python314/python.exe"
+  (setq org-babel-python-command "python3"
         ;; sole user; don't confirm on every block evaluation
         org-confirm-babel-evaluate nil))
 

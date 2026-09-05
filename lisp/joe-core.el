@@ -22,7 +22,16 @@
 ;; `:ensure nil' does not leave them missing. This mirrors the old `:ensure t'
 ;; (which installs at config time regardless of :defer/:if), so behaviour on
 ;; non-Nix hosts is unchanged.
-(unless (bound-and-true-p joe/nix-emacs-p)
+;;
+;; Android is excluded for the opposite reason: none of the three can work
+;; there. pdf-tools needs an epdfinfo built from C, jinx a jinx-mod.so, and
+;; notmuch's elisp is useless without the notmuch CLI and a local maildir. The
+;; APK has no compiler, so this would spend a phone's startup downloading three
+;; packages that then fail at first use. Every consumer of them is already
+;; guarded -- jinx on `executable-find', pdf-tools and notmuch in modules that
+;; init.el does not load on Android at all.
+(unless (or (bound-and-true-p joe/nix-emacs-p)
+            (bound-and-true-p joe/android-p))
   (dolist (pkg '(notmuch pdf-tools jinx))
     (unless (package-installed-p pkg)
       (unless package-archive-contents (package-refresh-contents))
@@ -50,9 +59,17 @@
 ;; of a noexec /home, so it applies verbatim to the nixdesktop. Note that
 ;; setting `native-comp-jit-compilation' to nil does NOT cover this — the whole
 ;; point of failure 1 is that compile-angel ignores that variable.
+;;
+;; Also off on Android, for cost rather than correctness: byte-compiling every
+;; library on load is minutes of phone CPU (and battery) to save a fraction of
+;; a second of load time, and package.el's own compile-on-install already
+;; covers the packages that matter. Whether failure 1 can arise there depends
+;; on whether the APK carries libgccjit — check `native-comp-available-p' on
+;; the device rather than assuming; it does not change the decision here.
 (use-package compile-angel
   :ensure t
-  :unless (bound-and-true-p joe/noexec-home-p)
+  :unless (or (bound-and-true-p joe/noexec-home-p)
+              (bound-and-true-p joe/android-p))
   :demand t
   :config
   (compile-angel-on-load-mode)
@@ -170,18 +187,15 @@ initial non-graphical frame.  Skips the update unless both are real colors."
       (setq-default pdf-view-midnight-colors (cons fg bg)))))
 
 ;;;; Cross-platform path constants
-;; Used by joe-org-notes.el, joe-research.el etc. so they don't hardcode drive letters.
-;; NB: the non-Windows branch assumed WSL (/mnt/d/...). On the x270 appliance
-;; that path does not exist, and `directory-files-recursively' on a missing
-;; directory signals - which aborted org's whole :config block and left
-;; `org-capture-templates' void, cascading into zotra/citar failures.
-;; The nixdesktop branches are the old Windows D: drive, carried over intact but
-;; mounted at /mnt/media rather than given a drive letter. Without them these
-;; fall through to the WSL default /mnt/d/... , which does not exist there —
-;; costing the agenda (the `file-directory-p' guard below catches that) and
-;; silently pointing `denote-directory' at a nonexistent tree (which it does not).
-;; Keyed on `joe/nix-emacs-p' the same way the appliance keys on its own
-;; constant: it identifies the machine, which is what actually decides the path.
+;; Used by joe-org-notes.el, joe-research.el and others, so that no module
+;; hardcodes a location. Each host keys off the constant that identifies it,
+;; because the machine is what decides the path.
+;;
+;; The /mnt/d default is a leftover from a decommissioned host. It does not
+;; exist on the appliance, and `directory-files-recursively' signals an error
+;; on a directory that is absent. That error aborted org's whole :config block
+;; and left `org-capture-templates' void, which then broke zotra and citar. The
+;; `file-directory-p' guard in joe-org-notes.el prevents this now.
 ;;
 ;; Notes and Texts have since moved off that drive onto the encrypted SSD: they
 ;; are small but latency-sensitive (org-agenda opens ~147 files at startup, and
@@ -190,46 +204,61 @@ initial non-graphical frame.  Skips the update unless both are real colors."
 ;; mode on Notes. Syncthing follows them by folder ID, so its config was
 ;; repointed rather than the files re-shared. Noises is bulk audio and stays put.
 ;; Symlinks remain at the old /mnt/media paths, so a stale reference still works.
+;;
+;; The Android branches prefer a directory inside TERMUX's home rather than
+;; Emacs's own (/data/data/org.gnu.emacs/files) or a Storage Access Framework
+;; mount under /content. That is not a stylistic choice:
+;;
+;;   - /content is served entirely by Emacs's own file primitives, so a
+;;     SUBPROCESS started there silently gets Emacs's home as its working
+;;     directory instead. That is why ripgrep and git return nothing on a
+;;     Nextcloud/Syncthing folder mounted that way. It is also very slow --
+;;     minutes to build an agenda, on Google's document-provider IPC.
+;;   - Termux's home is an ordinary Unix directory that both Emacs and its
+;;     subprocesses can read, and Syncthing can be run inside Termux to keep it
+;;     in step with the desktops. See README.
+;;
+;; Falls back to a directory in Emacs's own home when Termux is absent, so a
+;; non-`termux/' APK still gets a valid (if subprocess-poor) path rather than
+;; one that cannot exist. `org-agenda-files' and `denote-directory' are then
+;; pointed at whatever this resolves to, and org's own `file-directory-p' guard
+;; (joe-org-notes.el) covers the case where neither has been created yet.
+(defun joe/android-dir (name)
+  "Return the Android path for a sync directory called NAME.
+Termux's home when it is reachable, else Emacs's own home."
+  (let ((termux (expand-file-name (concat "Sync/" name)
+                                  joe/android-termux-home)))
+    (if (file-directory-p joe/android-termux-home)
+        termux
+      (expand-file-name (concat "~/" name)))))
+
 (defconst joe/notes-dir
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/notes"))
+        ((bound-and-true-p joe/android-p) (joe/android-dir "Notes"))
         ((bound-and-true-p joe/nix-emacs-p) (expand-file-name "~/Notes"))
-        ((eq system-type 'windows-nt) "d:/Notes")
         (t "/mnt/d/Notes"))
   "Root directory for Denote notes.")
 
 (defconst joe/texts-dir
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/texts"))
+        ((bound-and-true-p joe/android-p) (joe/android-dir "Texts"))
         ((bound-and-true-p joe/nix-emacs-p) (expand-file-name "~/Texts"))
-        ((eq system-type 'windows-nt) "d:/Texts")
         (t "/mnt/d/Texts"))
   "Root directory for PDFs and bibliography.")
 
 (defconst joe/noises-dir
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/noises"))
+        ((bound-and-true-p joe/android-p) (joe/android-dir "Noises"))
         ((bound-and-true-p joe/nix-emacs-p) "/mnt/media/Noises")
-        ((eq system-type 'windows-nt) "d:/Noises")
         (t "/mnt/d/Noises"))
   "Root directory for ambient/background sound files.")
 
-;;;; WSL <-> Windows path translation helpers
-(defun joe/wsl-to-win-path (path)
-  "Convert a WSL path like /mnt/d/foo to a Windows path d:/foo."
-  (replace-regexp-in-string
-   "^/mnt/\\([a-z]\\)/"
-   (lambda (_m) (concat (upcase (match-string 1)) ":/"))
-   path))
-
-(defun joe/win-to-wsl-path (path)
-  "Convert a Windows path like d:/foo to a WSL path /mnt/d/foo."
-  (replace-regexp-in-string
-   "\\([A-Za-z]\\):[\\/]"
-   (lambda (_m) (concat "/mnt/" (downcase (match-string 1)) "/"))
-   path))
-
 ;;;; Environment settings
-;; On Windows, PATH and exec-path are managed explicitly in joe-tools.el.
-;; These Linux-only tweaks add the active nvm Node and ~/.local/bin to the
-;; path for Linux/WSL Emacs instances only.
+;; Add the active nvm Node and ~/.local/bin to the path. Linux only: Android
+;; gets its PATH from early-init.el, which prepends Termux's bin.
+;;
+;; Two path-translation helpers used to live here. They retired with the host
+;; whose drive letters they translated, and nothing called them.
 (when (memq system-type '(gnu gnu/linux gnu/kfreebsd))
   ;; Dynamically find the newest installed nvm Node instead of a hardcoded version.
   (let* ((nvm-root (expand-file-name "~/.nvm/versions/node"))
@@ -279,9 +308,9 @@ initial non-graphical frame.  Skips the update unless both are real colors."
   (recentf-filename-handlers '(abbreviate-file-name))
   (recentf-max-saved-items 400)
   (recentf-max-menu-items 400)
-  ;; Not a literal "~/.emacs.d/recentf": joe-tools.el resets HOME on Windows,
-  ;; and this file is loaded first, so the tilde would expand against the old
-  ;; HOME and strand the history somewhere else.
+  ;; `locate-user-emacs-file' rather than a literal "~/.emacs.d/recentf": it
+  ;; resolves against `user-emacs-directory' instead of $HOME, so the history
+  ;; follows the configuration rather than the environment.
   (recentf-save-file (locate-user-emacs-file "recentf")))
 
 ;;;; Global keybindings and miscellaneous settings
@@ -348,7 +377,7 @@ Version: 2022-04-05"
 (setq initial-buffer-choice 'xah-new-empty-buffer)
 
 ;;;; Jump to this configuration
-;; `C-c e' is eww (joe-tools.el), so the config lands on the shifted key.
+;; `C-c e' is eww (joe-eww.el), so the config lands on the shifted key.
 ;; Goes through `completing-read' rather than opening a fixed file, so vertico
 ;; and orderless do the narrowing: "mail" reaches joe-mail.el in four keys.
 (defun joe/find-config-file ()
@@ -387,11 +416,11 @@ Version: 2022-04-05"
   (setq aw-dispatch-always t))
 
 ;;;; Daemon exit diagnostics
-;; The daemon has been dying with no Windows crash dump and no Code
-;; Integrity block logged against it, so capture whatever Emacs itself
-;; knows at exit time.  Only fires for graceful exits (kill-emacs called
-;; for any reason) -- an external TerminateProcess kill won't run this,
-;; and that absence is itself a useful signal.
+;; Added while chasing a daemon that died leaving nothing in the system logs:
+;; capture whatever Emacs itself knows at exit time.  Only fires for graceful
+;; exits (kill-emacs called for any reason) -- a kill from outside the process
+;; will not run this, and that absence is itself a useful signal.  Kept after
+;; that investigation closed, because it costs nothing until something dies.
 (setq server-log t)
 
 (defun joe/log-daemon-exit ()

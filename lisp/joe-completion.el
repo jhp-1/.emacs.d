@@ -149,8 +149,7 @@
   (add-hook 'completion-at-point-functions #'cape-elisp-block) ; org-babel src blocks
   :config
   ;; Word completion from a system word list, replacing the Ispell Capf turned
-  ;; off at the top of this file.  There is no word list on Windows, where this
-  ;; simply stays off.
+  ;; off at the top of this file.  Stays off wherever there is no word list.
   (when (and (stringp cape-dict-file) (file-readable-p cape-dict-file))
     (add-hook 'text-mode-hook #'joe/cape-dict-setup)))
 
@@ -168,10 +167,11 @@
     (add-to-list 'dabbrev-ignored-buffer-modes mode)))
 
 ;;;; nerd icons for completion
-;; See joe-ui.el: no glyph fallback on the appliance's console.
+;; See joe-ui.el: no glyph fallback on the appliance's console, and no
+;; nerd-patched font on Android. `joe/no-icon-font-p' covers both.
 (use-package nerd-icons-completion
   :ensure t
-  :unless (bound-and-true-p joe/console-appliance-p)
+  :unless (bound-and-true-p joe/no-icon-font-p)
   :after marginalia
   :config
   ;; `nerd-icons-completion-mode' installs the marginalia hook itself.
@@ -179,7 +179,7 @@
 
 (use-package nerd-icons-corfu
   :ensure t
-  :unless (bound-and-true-p joe/console-appliance-p)
+  :unless (bound-and-true-p joe/no-icon-font-p)
   :after corfu
   :config
   (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))

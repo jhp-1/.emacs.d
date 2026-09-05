@@ -5,7 +5,7 @@
   :ensure t
   :demand t
   :custom
-  ;; joe/texts-dir resolves to d:/Texts on Windows, /mnt/d/Texts in WSL.
+  ;; joe/texts-dir resolves per host; see joe-core.el.
   (citar-bibliography (list (expand-file-name "My Library.bib" joe/texts-dir)))
   (org-cite-insert-processor 'citar)
   (org-cite-follow-processor 'citar)
@@ -178,7 +178,7 @@ source-supplied keywords into the controlled vocabulary."
 (defun joe/--exiftool ()
   "Return the exiftool program, or nil after warning once.
 Every PDF-metadata write is a no-op without exiftool.  This used to fail
-silently -- when the WSL setup went away so did exiftool, and months of
+silently -- a host migration took exiftool with it, and months of
 `joe/bib-set-keywords' calls wrote the bib but quietly never touched a
 single PDF.  Warn loudly instead, exactly once per session."
   (or (executable-find "exiftool")
@@ -330,13 +330,6 @@ is how a whole batch import once sat untagged and unnoticed."
 (keymap-global-set "C-c f t" #'joe/bib-set-keywords)
 (keymap-global-set "C-c f k" #'joe/bib-audit-keywords)
 
-(when (eq system-type 'windows-nt)
-  ;; MinGW64 DLLs must come before Git for Windows
-  (setenv "PATH" (concat "C:\\msys64\\mingw64\\bin;" (getenv "PATH")))
-  (add-to-list 'exec-path "C:/msys64/mingw64/bin")
-  (setq pdf-info-epdfinfo-program "C:/msys64/mingw64/bin/epdfinfo.exe")
-  ;; epdfinfo requires unix line endings
-  (prefer-coding-system 'utf-8-unix))
 ;;;;; pdf-tools
 (use-package pdf-tools
   :unless (bound-and-true-p joe/console-appliance-p)
@@ -995,28 +988,19 @@ Uses the cached PDF scan; see `joe/rescan-annotated-pdfs'."
   "When non-nil, `joe/batch-import-books' reports what it would do but
 makes no changes: no bib writes, no file copies, no deletions.")
 
-(defvar joe/batch-import-pdftotext-candidates
-  '("C:/Program Files/Git/mingw64/bin/pdftotext.exe"
-    "C:/msys64/mingw64/bin/pdftotext.exe")
-  "Preferred absolute paths to try for pdftotext before falling back to PATH.")
-
 (defun joe/--pdftotext-program ()
   "Return a usable pdftotext program path, or nil."
-  (or (seq-find #'file-exists-p joe/batch-import-pdftotext-candidates)
-      (executable-find "pdftotext")))
+  (executable-find "pdftotext"))
 
+;; Kept as a function, with three callers, although its body is now one call.
+;; It used to fall back to an 8.3 short name, because the Windows host encoded
+;; `call-process' arguments as UTF-8 while native programs read the system
+;; codepage, so a path holding a curly apostrophe never opened. That host is
+;; retired and the workaround went with it; the name still marks every place
+;; where a path leaves Emacs for another program.
 (defun joe/--native-path (file)
-  "Return a path for FILE safe to hand to a native (non-Emacs) program.
-On Windows, `call-process' encodes arguments as UTF-8, but native programs
-use the system codepage, so a path with non-ASCII characters fails to open
-\(e.g. the curly apostrophe in \"Anna's Archive\").  Fall back to the 8.3
-short name, which is pure ASCII, in that case."
-  (let ((f (expand-file-name file)))
-    (if (and (eq system-type 'windows-nt)
-             (fboundp 'w32-short-file-name)
-             (string-match-p "[^[:ascii:]]" f))
-        (or (ignore-errors (w32-short-file-name f)) f)
-      f)))
+  "Return a path for FILE safe to hand to a native (non-Emacs) program."
+  (expand-file-name file))
 
 ;;;;; ISBN validation / normalization
 (defun joe/--isbn13-valid-p (s)
@@ -1197,12 +1181,13 @@ does not land on the entry when point starts before it on a blank line."
    (concat "\\1" new "\\2") entry-string t))
 
 (defconst joe/--citekey-unsafe-rx "[<>:\"/\\|?*]"
-  "Characters that are illegal in a Windows filename.
-The citekey becomes the PDF's filename, so any of these makes the copy
-fail.  A colon is the common one -- zotra derives keys from the
-shorttitle, so \"Crashed: how a decade...\" yields `tooze_crashed:_2019'
--- and on NTFS \"name:stream\" means an alternate data stream, so the
-copy either errors or silently writes into a hidden stream.")
+  "Characters that no portable filename may hold.
+The citekey becomes the PDF's filename, so any of these can make the
+copy fail.  A colon is the common one -- zotra derives keys from the
+shorttitle, so \"Crashed: how a decade...\" yields `tooze_crashed:_2019'.
+Linux itself accepts every character here except the slash, but the
+library syncs to Android, where /sdcard is served by a filesystem that
+does not, so the set is kept at its strictest.")
 
 (defun joe/--sanitize-citekey (entry-string key)
   "Return (ENTRY . KEY) with filename-hostile characters stripped from KEY.
@@ -1657,9 +1642,10 @@ Operates on the marked files when called from Dired, otherwise on every
                 (directory-files (or dir (expand-file-name "~/Downloads"))
                                  t "\\.pdf\\'")))
          ;; Filter to PDFs.  Use (not (file-directory-p)) rather than
-         ;; `file-regular-p': the latter is a `stat' that fails (returns nil)
-         ;; for paths at/over Windows' 260-char limit, silently dropping books
-         ;; with long names; `directory-files' itself lists them fine.
+         ;; `file-regular-p': the latter is a `stat', and a retired host's
+         ;; path-length limit made it return nil for long names, silently
+         ;; dropping those books while `directory-files' listed them fine.
+         ;; The weaker test is all this needs in any case.
          (files (seq-filter (lambda (f) (and (stringp f)
                                              (string-match-p "\\.pdf\\'" (downcase f))
                                              (not (file-directory-p f))))
@@ -1724,16 +1710,15 @@ Operates on the marked files when called from Dired, otherwise on every
     (nreverse out)))
 
 (defun joe/--dedup-paths (paths)
-  "Remove duplicate PATHS, case-insensitively on Windows.
-`joe/citar--files-by-citekey' probes both \".pdf\" and \".PDF\", and on a
-case-insensitive filesystem BOTH report as existing for the same physical
-file -- so a naive `delete-dups' leaves two names for one file and every
-write happens twice."
+  "Remove duplicate PATHS, comparing them as absolute names.
+`joe/citar--files-by-citekey' probes both \".pdf\" and \".PDF\".  On the
+retired case-insensitive host BOTH reported as existing for one physical
+file, so a naive `delete-dups' left two names for it and every write
+happened twice.  The remaining hosts are case-sensitive, so that cannot
+recur, but two spellings of one path still can."
   (let ((seen (make-hash-table :test #'equal)) (out '()))
     (dolist (p paths)
-      (let ((canon (if (memq system-type '(windows-nt ms-dos))
-                       (downcase (expand-file-name p))
-                     (expand-file-name p))))
+      (let ((canon (expand-file-name p)))
         (unless (gethash canon seen)
           (puthash canon t seen)
           (push p out))))

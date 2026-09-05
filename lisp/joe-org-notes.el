@@ -3,9 +3,9 @@
 ;;;; jinx
 (use-package jinx
   :ensure nil
-  ;; jinx links libenchant, not aspell directly; on Nix the backend shows up as
-  ;; enchant-2, on the old Windows box as aspell. Accept either so spell-check
-  ;; activates on both without a per-host gate.
+  ;; jinx links libenchant, not aspell directly, and the backend surfaces
+  ;; under different names per host: enchant-2 on Nix, aspell elsewhere.
+  ;; Accept either, so spell-check activates without a per-host gate.
   :if (or (executable-find "enchant-2") (executable-find "aspell"))
   :hook (org-mode . jinx-mode)
   :bind
@@ -43,7 +43,7 @@
   (setq org-goto-max-level 3)
   (setq org-hide-block-startup t)
   (setq org-directory joe/notes-dir)
-  ;; Use joe/notes-dir so this works from both Windows and WSL Emacs.
+  ;; Use joe/notes-dir so that no host hardcodes a location.
 ;; Guarded: `directory-files-recursively' signals if the directory is absent,
 ;; and because this sits inside org's :config that would abort the entire
 ;; block - taking `org-capture-templates' and everything after it with it.
@@ -92,13 +92,13 @@
            :jump-to-captured t))))
 
 ;;;; Career roadmap
-;; Merged in from the former joe-career.el: one capture template, two denote
-;; keywords, one org-ql view and a keybinding is settings for a single org
-;; file, not a subsystem. (joe-counting-house.el stays separate - that one is
-;; a real subsystem with its own transient menu and harvest machinery.)
+;; Merged in from the former joe-career.el: two denote keywords, one org-ql
+;; view and a keybinding are settings for a single org file, not a subsystem.
+;; (joe-counting-house.el stays separate - that one is a real subsystem with
+;; its own transient menu and harvest machinery.)
 (defconst joe/career-applications-file
   (expand-file-name "career/20260624T102500--job-applications__career.org" joe/notes-dir)
-  "Denote note the job-application capture template files into.
+  "Denote note holding the job applications.
 Lives in the `career/' project silo (git repo), not the notes root.")
 
 (with-eval-after-load 'denote
@@ -120,19 +120,10 @@ Lives in the `career/' project silo (git repo), not the notes root.")
 ;; to wait on org: the command requires what it needs itself.
 (keymap-global-set "C-c n A" #'joe/applications-open)
 
-(with-eval-after-load 'org-capture
-  (add-to-list 'org-capture-templates
-               `("a" "Job application / outreach" entry
-                 (file+headline ,joe/career-applications-file "Applications")
-                 ,(concat
-                   "* TODO %^{Firm} — %^{Role} :%^{Lane|rulesascode|analytics|aicompliance|apprenticeship}:\n"
-                   ":PROPERTIES:\n"
-                   ":ADDED:    %U\n"
-                   ":STATUS:   %^{Status|applied|replied|call|interview|offer|rejected}\n"
-                   ":END:\n"
-                   "- Next action: %^{Next action}\n%?")
-                 :empty-lines 1)
-               t))
+;; The job-application capture template was removed in Aug 2026. What remains
+;; is read-only: `joe/applications-open' still lists what the file already
+;; holds. Delete this whole section, and the two denote keywords above, if the
+;; file itself is finished with.
 
 ;;;;; org-modern
 (use-package org-modern
@@ -145,7 +136,7 @@ Lives in the `career/' project silo (git repo), not the notes root.")
 (use-package denote
   :ensure t
   :config
-  ;; joe/notes-dir resolves to d:/Notes on Windows, /mnt/d/Notes in WSL.
+  ;; joe/notes-dir resolves per host; see joe-core.el.
   (setq denote-directory (expand-file-name joe/notes-dir))
   (setq denote-dired-directories
         (list denote-directory
