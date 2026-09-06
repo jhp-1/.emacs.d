@@ -124,6 +124,33 @@ Set this to nil to leave both keys alone.")
       (menu-bar-set-tool-bar-position 'bottom)
     (set-frame-parameter nil 'tool-bar-position 'bottom))
 
+  ;; Empty the DEFAULT tool bar -- the row of new/open/save/cut/copy/paste
+  ;; icons -- while keeping the modifier bar. They look like two halves of one
+  ;; widget but are separate keymaps: `modifier-bar-mode' populates
+  ;; `secondary-tool-bar-map', so clearing `tool-bar-map' costs nothing that
+  ;; matters here. `tool-bar-mode' itself must stay ON, since it is what draws
+  ;; either of them.
+  ;;
+  ;; The icons are 24x24 XPM bitmaps (the modifier glyphs are 1-bit PBM, which
+  ;; is why they fall back to text labels). At 24 pixels on a ~400dpi panel
+  ;; they are both ugly and too small to hit, and there is no scalable set to
+  ;; swap in -- this build does have SVG support, but Emacs ships no SVG icons
+  ;; for these commands, only 46 unrelated ones. Scaling the bitmaps up would
+  ;; just make them blurry as well as chunky.
+  ;;
+  ;; Nothing is lost: every command in that row is in the menu bar, which is
+  ;; text and enabled above. What it buys is a whole row of screen height back
+  ;; on a device that has very little, and a bar that renders as crisp text at
+  ;; whatever `joe/android-font-height' says.
+  ;;
+  ;; Deferred to `emacs-startup-hook' because `tool-bar-setup' populates
+  ;; `tool-bar-map' AFTER the init file is read: clearing it here directly
+  ;; looks like it works, then Emacs fills the row back in before the first
+  ;; redisplay, and the setting appears to have been ignored.
+  (add-hook 'emacs-startup-hook
+            (lambda ()
+              (setq-default tool-bar-map (make-sparse-keymap))))
+
   ;; Emacs hides the on-screen keyboard whenever the current buffer is
   ;; read-only, to save screen space. That is a sound default on a desktop and
   ;; a disaster here: it is what makes eww's URL prompt, dired and the agenda

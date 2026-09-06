@@ -31,8 +31,15 @@ Hiding is just the absence of ls's -a flag, so flip it and re-list."
         ;; than misparsed -- nothing breaks, listings just lose the grouping.
         ;; Dropping it here keeps the value honest about what will happen;
         ;; joe-android.el sets `ls-lisp-dirs-first', which is the equivalent.
+        ;; Android additionally gets -t: newest first. On a phone the reason to
+        ;; open Notes is almost always something touched recently, and there is
+        ;; no scrollbar to gauge how far down an alphabetical list the thing
+        ;; you want might be. `ls-lisp-dirs-first' still floats the
+        ;; subdirectories above the files, so the shape of the listing is
+        ;; unchanged -- only the file order. Left alone on the desktops, where
+        ;; alphabetical order is easier to scan on a wide window.
         dired-listing-switches
-        (if (bound-and-true-p joe/android-p) "-lh"
+        (if (bound-and-true-p joe/android-p) "-lth"
           "-lv --group-directories-first -h")
         dired-dwim-target t
         dired-auto-revert-buffer #'dired-directory-changed-p
@@ -108,10 +115,10 @@ Hiding is just the absence of ls's -a flag, so flip it and re-list."
   :hook (ibuffer-mode . nerd-icons-ibuffer-mode))
 
 ;;;; General Dired optimizations
-;; dired-listing-switches is set canonically in the dired use-package block above
-;; ("-lv --group-directories-first -h" — no -a, so dotfiles are hidden by
-;; default; toggle per-buffer with C-c . / joe/dired-toggle-dotfiles).
-;; do not duplicate it here.
+;; dired-listing-switches is set canonically in the dired use-package block
+;; above ("-lv --group-directories-first -h", or "-lth" on Android — no -a in
+;; either, so dotfiles are hidden by default; toggle per-buffer with C-c . /
+;; joe/dired-toggle-dotfiles). do not duplicate it here.
 (add-hook 'dired-mode-hook #'dired-omit-mode)  ; Hide non-essential files per buffer
 ;; inhibit-compacting-font-caches is now set in early-init.el
 (setq nerd-icons-dired-disable-submodule-check t)  ; If this option exists
