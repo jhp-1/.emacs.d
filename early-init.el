@@ -36,6 +36,27 @@ than in a Storage Access Framework folder.")
       (setenv "PATH" (format "%s:%s" bin (getenv "PATH")))
       (push bin exec-path))))
 
+;; `temporary-file-directory' comes from $TMPDIR, and the Android port sets it
+;; nowhere, so it falls back to /tmp -- which on Android is owned by shell:shell
+;; with the SELinux context shell_data_file, and is therefore not writable by an
+;; app process at all.  Everything needing a scratch file then fails, silently.
+;; The visible casualty is `server-start' in joe-android.el: it creates its
+;; socket under `server-socket-dir' (i.e. $TMPDIR/emacs<uid>), so with no
+;; writable TMPDIR the server never comes up and emacsclient has nothing to talk
+;; to -- with no error shown, because server-start reports the failure only to
+;; *Messages*.  Termux's own tmp is owned by the shared UID and carries the same
+;; SELinux categories as our data directory, so it is the one scratch area both
+;; halves of this pairing can write.  Guarded like PATH above, and falling back
+;; inside `user-emacs-directory' so a non-Termux APK still lands somewhere
+;; writable instead of /tmp.
+(when joe/android-p
+  (let ((tmp (if (file-directory-p "/data/data/com.termux/files/usr/tmp")
+                 "/data/data/com.termux/files/usr/tmp"
+               (expand-file-name "tmp" user-emacs-directory))))
+    (make-directory tmp t)
+    (setenv "TMPDIR" tmp)
+    (setq temporary-file-directory (file-name-as-directory tmp))))
+
 ;; Prevent the glimpse of un-styled Emacs by disabling these UI elements early.
 (setq load-prefer-newer t)
 ;; ...except on Android, where the tool bar and menu bar are not chrome, they
