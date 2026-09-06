@@ -118,6 +118,62 @@
   :unless (bound-and-true-p joe/no-icon-font-p))
 ;; nerd-icons-completion is fully configured in joe-completion.el
 ;; (marginalia hook + nerd-icons-completion-mode); no duplicate block needed here.
+;;;; Sunrise/sunset theme switching
+;; Shared by every host with no OS appearance setting it can poll: the
+;; appliance's TTY has none, and Android has one but will not let an app read
+;; it (see the auto-dark block below). Uses built-in solar.el rather than the
+;; `circadian' package - it is ~25 lines and avoids a dependency on machines
+;; where installing things is deliberately awkward.
+;;
+;; Coordinates are approximate on purpose: 0.1 degree is well under a minute of
+;; error, and being 50km out moves sunrise by about two minutes.
+(require 'solar)
+(setq calendar-latitude 51.5
+      calendar-longitude -0.1
+      calendar-location-name "London")
+
+(defun joe/solar-times ()
+  "Return (SUNRISE . SUNSET) today as float hours, or nil if unavailable.
+Polar day/night and other edge cases make `solar-sunrise-sunset' return a
+list without usable times; callers must handle nil."
+  (let* ((data (solar-sunrise-sunset (calendar-current-date)))
+         (rise (caar data))
+         (set (car (cadr data))))
+    (when (and (numberp rise) (numberp set))
+      (cons rise set))))
+
+(defun joe/solar-theme-for-now ()
+  "Return the theme appropriate to the current time of day."
+  (let ((times (joe/solar-times)))
+    (if (null times)
+        'modus-operandi          ; no sun data: default to light
+      (let* ((now (decode-time))
+             (hour (+ (nth 2 now) (/ (nth 1 now) 60.0))))
+        (if (and (>= hour (car times)) (< hour (cdr times)))
+            'modus-operandi
+          'modus-vivendi)))))
+
+(defun joe/solar-apply-theme ()
+  "Load whichever theme suits the current time, if not already active."
+  (interactive)
+  (let ((want (joe/solar-theme-for-now)))
+    (unless (memq want custom-enabled-themes)
+      ;; Disable the other one first, or its faces linger underneath and
+      ;; show through wherever the incoming theme does not override them.
+      (mapc #'disable-theme custom-enabled-themes)
+      (load-theme want t))))
+
+(defun joe/solar-enable ()
+  "Apply the time-appropriate theme now, then re-check hourly.
+Polled rather than scheduled precisely at each event: the times shift
+daily, the device sleeps and wakes across boundaries, and a timer that
+fired while suspended is simply missed.  Polling costs microseconds and
+cannot drift out of step.  Worst case the switch is up to an hour late;
+<f8> (`modus-themes-toggle') still overrides by hand until the next
+check."
+  (joe/solar-apply-theme)
+  (run-at-time t 3600 #'joe/solar-apply-theme))
+
 ;;;; auto-dark-emacs
 ;; Use modus-vivendi (dark) and modus-operandi (light) — both are built into
 ;; Emacs 29+ and always available, avoiding theme-not-found errors at startup.
@@ -164,12 +220,16 @@
     (setq auto-dark-polling-interval-seconds 5))
   (auto-dark-mode))
 
-;; Standing in for auto-dark when it is not running. <f8>
-;; (`modus-themes-toggle') still switches by hand. Skipped when
-;; `joe/android-auto-dark' is on, or this would fight it for the first theme.
+;; Standing in for auto-dark when it is not running. Previously this pinned
+;; modus-operandi, which is why the phone was permanently light while the
+;; desktops followed the system; it now follows the sun instead, which is the
+;; closest thing available once the OS setting is off limits. <f8>
+;; (`modus-themes-toggle') still switches by hand until the next hourly check.
+;; Skipped when `joe/android-auto-dark' is on, or the two would fight over the
+;; first theme.
 (when (and (bound-and-true-p joe/android-p)
            (not (bound-and-true-p joe/android-auto-dark)))
-  (load-theme 'modus-operandi t))
+  (joe/solar-enable))
 
 (when (bound-and-true-p joe/console-appliance-p)
   ;; On a TTY Emacs emits SGR 39;49 for `default' - "whatever the terminal's
@@ -230,56 +290,8 @@
   (setq-default mode-line-end-spaces "")
 
   ;;;; Sunrise/sunset theme switching
-  ;; Replaces auto-dark on this box, which has no OS appearance setting to
-  ;; poll. Uses built-in solar.el rather than the `circadian' package - it is
-  ;; ~25 lines and avoids a dependency on a machine where installing things is
-  ;; deliberately awkward. Coordinates are approximate on purpose: 0.1 degree
-  ;; is well under a minute of error, and being 50km out moves sunrise by
-  ;; about two minutes.
-  (require 'solar)
-  (setq calendar-latitude 51.5
-        calendar-longitude -0.1
-        calendar-location-name "London")
-
-  (defun joe/console--solar-times ()
-    "Return (SUNRISE . SUNSET) today as float hours, or nil if unavailable.
-Polar day/night and other edge cases make `solar-sunrise-sunset' return a
-list without usable times; callers must handle nil."
-    (let* ((data (solar-sunrise-sunset (calendar-current-date)))
-           (rise (caar data))
-           (set (car (cadr data))))
-      (when (and (numberp rise) (numberp set))
-        (cons rise set))))
-
-  (defun joe/console-theme-for-now ()
-    "Return the theme appropriate to the current time of day."
-    (let ((times (joe/console--solar-times)))
-      (if (null times)
-          'modus-operandi          ; no sun data: default to light
-        (let* ((now (decode-time))
-               (hour (+ (nth 2 now) (/ (nth 1 now) 60.0))))
-          (if (and (>= hour (car times)) (< hour (cdr times)))
-              'modus-operandi
-            'modus-vivendi)))))
-
-  (defun joe/console-apply-solar-theme ()
-    "Load whichever theme suits the current time, if not already active."
-    (interactive)
-    (let ((want (joe/console-theme-for-now)))
-      (unless (memq want custom-enabled-themes)
-        ;; Disable the other one first, or its faces linger underneath and
-        ;; show through wherever the incoming theme does not override them.
-        (mapc #'disable-theme custom-enabled-themes)
-        (load-theme want t))))
-
-  ;; Re-evaluated hourly rather than scheduled precisely at each event: the
-  ;; times shift daily, the machine sleeps and wakes across boundaries, and a
-  ;; timer that fired while suspended is simply missed. Polling is a few
-  ;; microseconds and cannot drift out of step. Worst case the switch is up to
-  ;; an hour late; <f8> still overrides manually until the next check.
-  (run-at-time t 3600 #'joe/console-apply-solar-theme)
-
-  (joe/console-apply-solar-theme)
+  ;; Defined at top level now, because Android needs it too.
+  (joe/solar-enable)
   (joe/console-sync-default-face)
   (joe/console-flatten-mode-line))
 

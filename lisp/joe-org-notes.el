@@ -149,6 +149,15 @@ Lives in the `career/' project silo (git repo), not the notes root.")
   (setq denote-known-keywords '("people" "methods" "entities" "concepts" "material" "events" "personal"))
   (setq denote-rename-buffer-format "%>60t")
   (setq denote-buffer-name-prefix "<Denote> ")
+  ;; Both settings above are inert without this: they only configure a mode
+  ;; that was never switched on, so buffers kept their raw file names
+  ;; (20260828T164500--reading-the-deductions__kant_material_reading.org) and
+  ;; nothing ever consulted the format. `denote-rename-buffer-mode' is what
+  ;; installs the hook that rewrites the buffer name after a file is visited or
+  ;; renamed. It is off by default in Denote, so it must be enabled explicitly.
+  ;; This matters most on Android, where the buffer name is all that fits in a
+  ;; narrow mode line and a 60-character title beats a timestamped filename.
+  (denote-rename-buffer-mode 1)
   :bind
   ( :map global-map
     ("C-c n n" . denote-open-or-create)

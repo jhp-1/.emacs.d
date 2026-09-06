@@ -132,14 +132,29 @@ than in a Storage Access Framework folder.")
   (setq native-comp-jit-compilation nil)
   (setq native-comp-enable-subr-trampolines nil))
 
+;; Android reads fonts from ~/fonts (/data/data/org.gnu.emacs/files/fonts) and
+;; nowhere else, non-recursively, and the APK ships nothing nerd-patched.
+;; Rather than assume either way, look: if the symbols font has been installed
+;; there, the icon packages work and should be enabled.  A file test rather
+;; than `font-family-list', which is not usable this early -- no frame exists
+;; yet, and on Android the font set is only enumerated once one does.
+(defconst joe/android-nerd-font-p
+  (and joe/android-p
+       (file-exists-p (expand-file-name "fonts/SymbolsNerdFontMono-Regular.ttf"
+                                        "~")))
+  "Non-nil when a Nerd Font has been installed into Android's ~/fonts.
+Install SymbolsNerdFontMono-Regular.ttf (for the icon glyphs) alongside
+the JetBrainsMono NFM faces (for text); see the Pixel 7a handoff.")
+
 ;; Hosts with no nerd-icons-patched font, where the icon packages render a row
 ;; of replacement boxes rather than glyphs.  Two unrelated causes, same symptom
 ;; and same fix, so they share a constant:
 ;;   - the x270's console (kmscon, built without pango) has no fontconfig
 ;;     fallback at all, so the one configured font must carry the glyph;
-;;   - Android searches only ~/fonts, non-recursively, and ships nothing
-;;     patched.  Drop a Nerd Font .ttf in there and this can be set to nil.
-(defconst joe/no-icon-font-p (or joe/console-appliance-p joe/android-p)
+;;   - Android, unless a Nerd Font has actually been installed (above).
+(defconst joe/no-icon-font-p
+  (or joe/console-appliance-p
+      (and joe/android-p (not joe/android-nerd-font-p)))
   "Non-nil where no nerd-icons-patched font can be assumed.")
 
 (provide 'early-init)

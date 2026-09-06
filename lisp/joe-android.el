@@ -19,6 +19,16 @@
 ;; of which phone this is running on, and editing elisp on glass is miserable:
 ;; `M-x set-variable' from the menu bar beats finding this file.
 
+(defvar joe/android-font-family "JetBrainsMono Nerd Font Mono"
+  "Family for the `default' face on Android, or nil to leave it alone.
+Android enumerates ~/fonts and nothing else, so without an installed
+font Emacs falls back to Droid Sans Mono -- which is why the phone
+looked nothing like the desktops.  The Nerd Font variant is chosen so
+one file serves as both the text font and the source of the icon
+glyphs; see `joe/android-nerd-font-p' in early-init.el.  Applied only
+when `font-family-list' actually reports it, so an uninstalled font is
+a no-op rather than an invisible-text bug.")
+
 (defvar joe/android-font-height 140
   "Default face height (1/10 pt) on Android.
 The desktop's 120 assumes a monitor at arm's length. Fontaine, which
@@ -26,23 +36,33 @@ sets that elsewhere, is skipped here -- see joe-ui.el.")
 
 (defvar joe/android-auto-dark nil
   "When non-nil, let auto-dark follow the Android system theme.
-Off until verified on the device.  auto-dark CAN read the setting here
--- its `termux\=' method shells out to `cmd uimode night\=', a plain
-Android command rather than anything from termux-api -- but two things
-have to hold, and neither is safe to assume:
+Leave this off.  It was written as \"off until verified on the device\";
+it has now been verified, on a Pixel 7a running Android 17, and it
+CANNOT work from this APK.  Both ways of reading the system setting are
+refused to an ordinary app UID:
 
-  - `cmd\=' lives in /system/bin and some of its subcommands want a
-    shell UID.  Check with
-        M-: (shell-command-to-string \"cmd uimode night\")
-    which must answer \"Night mode: yes\" or \"Night mode: no\".
-  - The poll is a subprocess.  joe-ui.el drops the interval to 60s
-    here; the desktop\='s 5s would be a battery decision, not a
-    cosmetic one.
+    $ cmd uimode night
+    SecurityException: ... requires android.permission.MODIFY_DAY_NIGHT_MODE
+    $ settings get secure ui_night_mode
+    SecurityException: getCurrentUser() ... requires INTERACT_ACROSS_USERS
 
-auto-dark will not select the method by itself: its detector requires
-`system-type\=' to be gnu/linux, which is true of a terminal Emacs
-running INSIDE Termux but not of this APK, where it is `android\='.
-joe-ui.el therefore sets `auto-dark-detection-method\=' explicitly.")
+Both permissions are signature-level, so `pm grant\=' will not hand them
+over even with root on the device.  The port exposes no native
+alternative either -- there is no appearance or night-mode function
+anywhere in its `android-*\=' namespace.
+
+So joe-ui.el uses `joe/solar-enable\=' on Android instead: sunrise/sunset
+from built-in solar.el, the same switcher the console appliance uses.
+It needs no permissions and no subprocess at all, which also disposes of
+the battery question this variable used to raise.
+
+Kept, rather than deleted, because the obstacle is a permission policy
+and not a fact about Emacs: should a future release expose the ui mode
+to apps, setting this to t re-enables the auto-dark path, which
+joe-ui.el still configures with `auto-dark-detection-method\=' set to
+`termux\=' (auto-dark will not pick that itself -- its detector requires
+`system-type\=' to be gnu/linux, true of Emacs running INSIDE Termux but
+not of this APK, where it is `android\=').")
 
 (defvar joe/android-notifications nil
   "When non-nil, send `alert\=' notifications to Android's shade.
@@ -138,8 +158,13 @@ Set this to nil to leave both keys alone.")
   ;; take the height back to its own. Same reasoning as the appliance's face
   ;; hooks in joe-ui.el.
   (defun joe/android-apply-font-height (&rest _)
-    "Set the `default' face to `joe/android-font-height'."
-    (set-face-attribute 'default nil :height joe/android-font-height))
+    "Set the `default' face to `joe/android-font-height'.
+Also set the family to `joe/android-font-family' when that font is
+actually installed, so the phone is not left on Android's fallback."
+    (set-face-attribute 'default nil :height joe/android-font-height)
+    (when (and joe/android-font-family
+               (member joe/android-font-family (font-family-list)))
+      (set-face-attribute 'default nil :family joe/android-font-family)))
   (joe/android-apply-font-height)
   (add-hook 'enable-theme-functions #'joe/android-apply-font-height)
 
