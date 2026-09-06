@@ -256,7 +256,15 @@ back on restores whatever style this buffer had before."
   ;; from here too would be a race, since that file loads on a later idle timer
   ;; and would simply overwrite this.
   (with-eval-after-load 'ls-lisp
-    (setq ls-lisp-dirs-first t))
+    (setq ls-lisp-dirs-first t)
+    ;; ls-lisp only consults `ls-lisp-format-time-list' when this is non-nil;
+    ;; left at its default it formats times from the locale instead, which here
+    ;; produced "09-05 13:14" where GNU ls (and therefore every desktop dired)
+    ;; gives "Sep  5 13:14". The variable is named for localisation but the
+    ;; effect is the opposite of what that suggests: setting it is what pins
+    ;; the format to the list, and the list already holds the conventional
+    ;; "%b %e %H:%M" / "%b %e  %Y" pair.
+    (setq ls-lisp-use-localized-time-format t))
 
   ;; Makes Emacs appear in Android's "open with" dialog for text files, which
   ;; dispatch through emacsclient. Cheap, and the only way to get a file from

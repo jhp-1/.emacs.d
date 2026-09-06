@@ -141,6 +141,14 @@ Lives in the `career/' project silo (git repo), not the notes root.")
   (setq denote-dired-directories
         (list denote-directory
               (expand-file-name "attachments" denote-directory)))
+  ;; Without this, `denote-dired-mode' matches those two directories EXACTLY
+  ;; and no others, so every subdirectory falls back to raw file names --
+  ;; journal/ listed 20230802T171041--wednesday-2-august-2023__journal.org
+  ;; rather than "Wednesday  2 August 2023", while Notes/ itself was fine. The
+  ;; identifier is ~20 characters before the title even starts, which on a
+  ;; phone is most of the width; journal/ is also where the agenda files live,
+  ;; so it is the subdirectory most often opened.
+  (setq denote-dired-directories-include-subdirectories t)
   (setq denote-infer-keywords nil)
   (setq denote-sort-keywords t)
   (setq denote-prompts '(title keywords))
