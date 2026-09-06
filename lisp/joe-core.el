@@ -205,32 +205,52 @@ initial non-graphical frame.  Skips the update unless both are real colors."
 ;; repointed rather than the files re-shared. Noises is bulk audio and stays put.
 ;; Symlinks remain at the old /mnt/media paths, so a stale reference still works.
 ;;
-;; The Android branches prefer a directory inside TERMUX's home rather than
-;; Emacs's own (/data/data/org.gnu.emacs/files) or a Storage Access Framework
-;; mount under /content. That is not a stylistic choice:
+;; The Android branches must avoid BOTH Emacs's own home
+;; (/data/data/org.gnu.emacs/files) and a Storage Access Framework mount under
+;; /content. The /content objection is the important one, and it is not
+;; stylistic:
 ;;
 ;;   - /content is served entirely by Emacs's own file primitives, so a
 ;;     SUBPROCESS started there silently gets Emacs's home as its working
 ;;     directory instead. That is why ripgrep and git return nothing on a
 ;;     Nextcloud/Syncthing folder mounted that way. It is also very slow --
 ;;     minutes to build an agenda, on Google's document-provider IPC.
-;;   - Termux's home is an ordinary Unix directory that both Emacs and its
-;;     subprocesses can read, and Syncthing can be run inside Termux to keep it
-;;     in step with the desktops. See README.
 ;;
-;; Falls back to a directory in Emacs's own home when Termux is absent, so a
-;; non-`termux/' APK still gets a valid (if subprocess-poor) path rather than
+;; Shared storage (/sdcard, i.e. /storage/emulated/0) has none of that problem:
+;; it is an ordinary path, so Emacs and its subprocesses both see it -- verified
+;; on the Pixel 7a by running git there from inside Emacs. It is also the only
+;; option the SYNCTHING APP can see. A directory under Termux's home would work
+;; for subprocesses too, but nothing except Termux can read it, so keeping notes
+;; there would mean running a second Syncthing instance inside Termux purely to
+;; sync them. /sdcard needs one instance for everything, which is why it wins.
+;;
+;; Two caveats, both real, neither fatal:
+;;   - git rejects /sdcard with "detected dubious ownership": FUSE reports the
+;;     owner as the media UID rather than Emacs's. Fix once per device with
+;;     `git config --global --add safe.directory "*"'.
+;;   - FUSE silently drops chmod, so no executable bit is ever stored. git's own
+;;     filesystem probe notices and sets core.fileMode=false at init, so this
+;;     needs no configuration -- but never expect a mode to survive here.
+;;
+;; Falls back to Termux's home, then to Emacs's own, so a device without shared
+;; storage granted (or a non-`termux/' APK) still gets a valid path rather than
 ;; one that cannot exist. `org-agenda-files' and `denote-directory' are then
 ;; pointed at whatever this resolves to, and org's own `file-directory-p' guard
 ;; (joe-org-notes.el) covers the case where neither has been created yet.
+(defconst joe/android-shared-storage "/storage/emulated/0"
+  "Android shared storage, the one place both Emacs and Syncthing can reach.
+Requires the app to hold MANAGE_EXTERNAL_STORAGE; without it this
+directory reads as empty rather than erroring.")
+
 (defun joe/android-dir (name)
   "Return the Android path for a sync directory called NAME.
-Termux's home when it is reachable, else Emacs's own home."
-  (let ((termux (expand-file-name (concat "Sync/" name)
+Shared storage when it is readable, else Termux's home, else Emacs's own."
+  (let ((shared (expand-file-name name joe/android-shared-storage))
+        (termux (expand-file-name (concat "Sync/" name)
                                   joe/android-termux-home)))
-    (if (file-directory-p joe/android-termux-home)
-        termux
-      (expand-file-name (concat "~/" name)))))
+    (cond ((file-directory-p shared) shared)
+          ((file-directory-p joe/android-termux-home) termux)
+          (t (expand-file-name (concat "~/" name))))))
 
 (defconst joe/notes-dir
   (cond ((bound-and-true-p joe/console-appliance-p) (expand-file-name "~/notes"))
