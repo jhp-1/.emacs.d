@@ -255,6 +255,21 @@ back on restores whatever style this buffer had before."
   ;; assignment, in joe-files.el, which carries the Android branch; setting it
   ;; from here too would be a race, since that file loads on a later idle timer
   ;; and would simply overwrite this.
+  ;; Dired wraps, and on a phone that is what actually makes it unusable. The
+  ;; frame is ~53 columns; a denote file name is ~50 characters before the
+  ;; extension, so every entry spilled onto a second line with its tail hanging
+  ;; under the next icon, and the listing read as a wall of text rather than a
+  ;; column of files. Truncating restores one-file-per-line, which is what it
+  ;; looks like on a desktop -- the desktop simply never wraps because the
+  ;; window is wide enough. The names are still reachable: the identifier is at
+  ;; the left where it is visible, and `C-c .' / horizontal scroll reach the
+  ;; rest. Set per buffer rather than globally, because wrapping is wanted in
+  ;; prose.
+  (defun joe/android-dired-truncate-lines ()
+    "Stop Dired lines wrapping on a narrow screen."
+    (setq truncate-lines t))
+  (add-hook 'dired-mode-hook #'joe/android-dired-truncate-lines)
+
   (with-eval-after-load 'ls-lisp
     (setq ls-lisp-dirs-first t)
     ;; ls-lisp only consults `ls-lisp-format-time-list' when this is non-nil;
