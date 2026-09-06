@@ -116,5 +116,31 @@ Hiding is just the absence of ls's -a flag, so flip it and re-list."
 ;; inhibit-compacting-font-caches is now set in early-init.el
 (setq nerd-icons-dired-disable-submodule-check t)  ; If this option exists
 
+;;;; Adopt Dired buffers that predate this file
+;; init.el requires joe-files on a 0.5s idle timer, and `add-hook' is not
+;; retroactive: a Dired buffer opened before that fires runs none of the hooks
+;; above and keeps stock Dired for as long as it lives. Reverting it later does
+;; not help either, because `dired-mode-hook' runs at mode init, not on revert.
+;; The symptom is one directory looking configured while another -- opened
+;; seconds earlier -- shows raw `-al' output: permissions, owner, dotfiles, no
+;; icons, no hidden details, no denote fontification.
+;;
+;; This is not a race that can be won by moving the timer, since Dired can
+;; always be opened sooner; so adopt whatever already exists instead. Both
+;; steps are needed: `run-hooks' switches on the minor modes that come from
+;; `dired-mode-hook', while reverting re-lists with the configured switches and
+;; fires `dired-after-readin-hook' for the icons. Everything invoked is
+;; idempotent, so buffers created after this point are unaffected.
+(defun joe/dired-adopt-existing-buffers ()
+  "Apply this file's Dired configuration to buffers that predate it."
+  (dolist (buf (buffer-list))
+    (with-current-buffer buf
+      (when (derived-mode-p 'dired-mode)
+        (setq dired-actual-switches dired-listing-switches)
+        (run-hooks 'dired-mode-hook)
+        (revert-buffer t t)))))
+
+(joe/dired-adopt-existing-buffers)
+
 (provide 'joe-files)
 ;;; joe-files.el ends here
