@@ -287,5 +287,26 @@ list without usable times; callers must handle nil."
 ;;;;; electric-pair-mode
 (electric-pair-mode 1)
 
+;;;;; show-paren
+;; `show-paren-mode' is already on by default; these are the two settings that
+;; make it useful rather than decorative.
+;;
+;; `show-paren-context-when-offscreen' is the one worth having. When the
+;; matching delimiter is scrolled off the top of the window, Emacs normally
+;; tells you nothing; `overlay' draws the opening line in the top-left of the
+;; window instead. In a file like joe-windows.el — several hundred lines of
+;; nested `use-package' and `pcase-dolist' forms — that is the difference
+;; between knowing which form you are closing and guessing.
+(setq show-paren-context-when-offscreen 'overlay
+      show-paren-delay 0)
+
+;;;;; visual-wrap-prefix-mode
+;; Continuation lines inherit the indentation and any fill prefix of the line
+;; they wrap from, so a wrapped org list item or blockquote lines up under
+;; itself rather than snapping back to column zero. Built in since Emacs 30.
+;; `visual-line-mode' is enabled per-mode elsewhere; this only changes how the
+;; wrapped half is drawn, so it is safe to hang on text-mode generally.
+(add-hook 'text-mode-hook #'visual-wrap-prefix-mode)
+
 (provide 'joe-ui)
 ;;; joe-ui.el ends here

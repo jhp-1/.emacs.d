@@ -46,6 +46,19 @@
 ;; below requires ace-window first; this declaration only quiets the compiler.
 (declare-function aw-select "ace-window" (mode-line &optional action))
 
+;;;; Window sizing
+
+;; Splitting and deleting windows normally takes the space from — or hands it
+;; back to — one neighbour, so a frame that has been split and unsplit a few
+;; times ends up with windows at unrelated sizes. With this set, the space is
+;; taken from and returned to the whole combination, and the siblings stay
+;; proportional.
+;;
+;; It matters more with the side windows below than without them: those are
+;; fixed slices of the frame, and the working windows should divide what is
+;; left evenly rather than inheriting whatever the last split happened to do.
+(setq window-combination-resize t)
+
 ;;;; Selecting windows
 
 ;;;;; The back-and-forth method
@@ -407,12 +420,55 @@ reads from the minibuffer after the repeat map has exited."
 ;; the cheapest usable key, and unlike `C-;' or `C-,' it is typeable on the
 ;; x270's console — the same constraint that moved embark to `C-c .' in
 ;; joe-completion.el.
+;; Act on something visible without going there first. avy already knows how to
+;; select a distant position; embark already knows how to offer the right verbs
+;; for whatever is at point. `joe/avy-action-embark' is the join: during an avy
+;; selection, `.' runs `embark-act' at the candidate and puts you back where you
+;; started.
+;;
+;; It belongs in this file rather than beside the embark configuration in
+;; joe-completion.el because it is the same idea as the rest of this section —
+;; the cheapest window switch is the one you do not make. Acting on a symbol in
+;; the window next door need not move you into that window at all.
+;;
+;; Defined ahead of the `use-package' form that installs it, and at top level
+;; rather than inside `:config': a `defun' in a function body still defines the
+;; function globally, but the byte-compiler will not treat it as a known
+;; definition, so every reference to it warns.
+(declare-function embark-act "embark" (&optional arg))
+(declare-function ring-ref "ring" (ring index))
+(defvar avy-ring)
+
+(defun joe/avy-action-embark (pt)
+  "Run `embark-act' on the candidate at PT, then return point to where it was.
+Installed on `.' in `avy-dispatch-alist'."
+  (unwind-protect
+      (save-excursion
+        (goto-char pt)
+        (embark-act))
+    ;; avy records the originating window on its ring; restoring point without
+    ;; this leaves the *window* selection on whichever one the candidate was in.
+    (select-window (cdr (ring-ref avy-ring 0))))
+  t)
+
 (use-package avy
   :ensure t
   :custom
   (avy-all-windows t)
   :bind
-  ("M-j" . avy-goto-char-timer))
+  (("M-j" . avy-goto-char-timer)
+   ;; The same key inside a search: `avy-isearch' labels the matches already
+   ;; highlighted by isearch and jumps to the one you pick, which beats
+   ;; pressing `C-s' repeatedly to walk to the fourth hit. Consistent with the
+   ;; global `M-j' — in both cases the key means "label what I can see and let
+   ;; me choose".
+   :map isearch-mode-map
+   ("M-j" . avy-isearch))
+  :config
+  ;; `?.' is unclaimed in the stock `avy-dispatch-alist' (which uses x/X for
+  ;; kill, t for teleport, m for mark, n for copy) — checked, not assumed.
+  ;; Set from `:config' because the alist does not exist until avy loads.
+  (setf (alist-get ?. avy-dispatch-alist) #'joe/avy-action-embark))
 
 ;; `pop-global-mark' (C-x C-SPC) jumps back across buffers, but always in the
 ;; current window — so returning to a location that is already visible next

@@ -118,6 +118,29 @@ With prefix arg NEW, force a fresh session."
   (interactive "P")
   (joe/eshell-in default-directory new))
 
+;; Declared for the same reason as `eshell-buffer-name' above: eshell.el is not
+;; loaded when this file is compiled, and the setup function below writes to
+;; the map.
+(defvar eshell-mode-map)
+
+;; `C-r' in a shell should search the history, and in eshell it does not.
+;; The binding has to be made from `eshell-mode-hook' rather than with
+;; `:bind (:map eshell-mode-map ...)': eshell rebuilds its keymap per buffer
+;; at mode start, so a binding made once against the global definition is
+;; gone by the time a session exists.
+;;
+;; `consult-history' rather than `eshell-previous-matching-input-from-input':
+;; it reads the same `eshell-history-ring', but through completing-read, so
+;; vertico and orderless apply and the history is filterable rather than only
+;; steppable.
+;;
+;; Defined ahead of the `use-package' form that hooks it — the reverse order
+;; works at runtime, since the hook does not fire until a session starts, but
+;; it makes the byte-compiler warn about a function it cannot yet see.
+(defun joe/eshell-setup-keys ()
+  "Bind `C-r' to `consult-history' in the current eshell buffer."
+  (keymap-set eshell-mode-map "C-r" #'consult-history))
+
 ;; `:if' is safe here where it was not for ghostel — the :ensure-before-:if
 ;; ordering noted above only bites when :ensure actually installs something,
 ;; and eshell is built in.
@@ -126,7 +149,9 @@ With prefix arg NEW, force a fresh session."
   :if (eq system-type 'gnu/linux)
   :bind
   ("C-c s" . joe/eshell-home)
-  ("C-c S" . joe/eshell-here))
+  ("C-c S" . joe/eshell-here)
+  :hook
+  (eshell-mode . joe/eshell-setup-keys))
 
 ;;;; eww
 (use-package eww
