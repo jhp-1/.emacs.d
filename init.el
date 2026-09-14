@@ -25,8 +25,12 @@
 ;; Load startup profiling if needed
 ;; (require 'startup-profiling) ; Uncomment to enable profiling
 
-;; Essential modules loaded immediately (needed for basic functionality)
+;; Essential modules loaded immediately (needed for basic functionality).
+;; joe-windows is eager rather than deferred: it is movement and window keys,
+;; and a daemon whose frames are up but whose `C-x o' is not is worse than one
+;; that took another tenth of a second to appear. It is also small.
 (require 'joe-core)
+(require 'joe-windows)
 (require 'joe-completion)
 
 ;; Org and bibliography are heavy on Windows (bib file read, org-element init,
