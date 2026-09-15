@@ -1286,125 +1286,139 @@ break citar-denote note references."
                 (when year (list (format "-XMP-dc:date=%s" year)))
                 (list (joe/--native-path file))))))))
 
-;;;;; LLM auto-tagging (OpenRouter)
+;;;;; LLM auto-tagging (local Claude Code CLI)
 ;; Tagging is otherwise "on-touch" (`joe/bib-set-keywords', by hand), which
 ;; has no natural trigger for a batch of unattended imports -- those would
 ;; otherwise sit untagged indefinitely, invisibly (`joe/bib-audit-keywords'
 ;; only catches off-vocabulary keywords, not a missing keywords field).  Ask
-;; a small/free OpenRouter model to pick from `joe/bib-keywords' instead.
-;; The reply is whitelist-filtered against that same vocabulary, so a
-;; chatty or careless model can wrap its answer in explanation but cannot
-;; inject an off-vocabulary tag; any failure (no key, no curl, network
-;; hiccup, unparseable reply) just yields no tags rather than interrupting
-;; the import.  Source-supplied keywords are still stripped unconditionally
-;; on fetch (`joe/bib-strip-keywords') -- this only ever adds fresh,
-;; in-vocabulary tags afterward.
-(require 'auth-source)
+;; the cheapest model behind the local `claude' CLI to pick from
+;; `joe/bib-keywords' instead.  The reply is whitelist-filtered against that
+;; same vocabulary, so a chatty or careless model can wrap its answer in
+;; explanation but cannot inject an off-vocabulary tag; any failure (no CLI,
+;; not logged in, quota spent, unparseable reply) just yields no tags rather
+;; than interrupting the import.  Source-supplied keywords are still stripped
+;; unconditionally on fetch (`joe/bib-strip-keywords') -- this only ever adds
+;; fresh, in-vocabulary tags afterward.
+;;
+;; This used to POST to OpenRouter's free tier, which needed an API key in
+;; auth-source and 3.2s pacing to stay under 20 requests/minute.  The CLI is
+;; already authenticated and paces itself (a call takes 4-15s), so both went
+;; away.  What replaced them is the flag list in `joe/--claude-chat', which
+;; exists to keep the tagger from inheriting this machine's own Claude Code
+;; configuration.
 
 (defvar joe/batch-import-auto-tag t
   "When non-nil, `joe/batch-import-books' asks an LLM to choose keywords
 for each newly-committed entry from `joe/bib-keywords'.  Set to nil to
-skip tagging (e.g. no OpenRouter key, or rate-limited) without losing
-the setting.")
+skip tagging (e.g. no `claude' CLI, or its quota is spent) without
+losing the setting.")
 
-(defvar joe/openrouter-model "nvidia/nemotron-3-ultra-550b-a55b:free"
-  "OpenRouter model slug used to auto-tag imported books.
-The task is closed-vocabulary word-picking, not reasoning, so a small,
-fast, plain instruction-tuned free-tier model is plenty -- avoid the
-`-reasoning' variants, which tend to pad replies with chain-of-thought
-before the actual answer.  Free slugs rotate; see
-https://openrouter.ai/models?max_price=0 for current options.")
+(defvar joe/claude-cli-model "claude-haiku-4-5"
+  "Model passed to `claude --model' to auto-tag imported books.
+The task is closed-vocabulary word-picking, not reasoning, so the
+smallest and cheapest model in the family is plenty.  Pinned to an exact
+ID rather than the `haiku' alias, so that a future Haiku release cannot
+quietly change how a part-tagged library gets tagged from here on.")
 
-(defun joe/--openrouter-api-key ()
-  "Return the OpenRouter API key from $OPENROUTER_API_KEY or auth-source.
-The key lives OUTSIDE this repo, which is public.  Add a line like
-    machine openrouter.ai password sk-or-v1-...
-to ~/.authinfo (searched first by default in Emacs 30) or ~/.authinfo.gpg
-if you want it encrypted at rest.  Never inline a key in this file."
-(or (getenv "OPENROUTER_API_KEY")
-      (auth-source-pick-first-password :host "openrouter.ai")))
+(defvar joe/claude-cli-timeout 120
+  "Seconds to allow one `claude -p' call before killing it.
+Calls normally finish in 4-15s.  `call-process-region' has no timeout of
+its own -- a wedged CLI would hang Emacs outright, with no C-g -- so the
+call runs under coreutils `timeout' whenever that is on PATH.")
 
-(defvar joe/openrouter-min-interval 3.2
-  "Minimum seconds between OpenRouter requests.
-OpenRouter caps free-model use at 20 requests/minute regardless of
-credit; 3.2s spacing keeps a batch just under that.  Tripping it returns
-HTTP 429, which is easily misread as the daily quota being exhausted.")
+(defun joe/--claude-result-json (output)
+  "Return the `--output-format json' object in OUTPUT as an alist, or nil.
+The CLI writes one JSON object on stdout, but `call-process-region'
+intermixes stderr into the same buffer, so scan backwards for the last
+line that actually parses rather than trusting all of OUTPUT to be JSON."
+  (let ((lines (nreverse (split-string output "\n" t)))
+        (json nil))
+    (while (and lines (null json))
+      (let ((line (string-trim (pop lines))))
+        (when (string-prefix-p "{" line)
+          (setq json (ignore-errors
+                       (json-parse-string line :object-type 'alist
+                                          :array-type 'list
+                                          :false-object nil
+                                          :null-object nil))))))
+    json))
 
-(defvar joe/openrouter-max-retries 3
-  "How many times to retry a 429 before giving up on a request.")
-
-(defvar joe/--openrouter-last-call nil
-  "`float-time' of the last OpenRouter request, for pacing.")
-
-(defun joe/--openrouter-pace ()
-  "Sleep as needed to respect `joe/openrouter-min-interval'."
-  (when joe/--openrouter-last-call
-    (let ((wait (- joe/openrouter-min-interval
-                   (- (float-time) joe/--openrouter-last-call))))
-      (when (> wait 0) (sleep-for wait))))
-  (setq joe/--openrouter-last-call (float-time)))
-
-(defun joe/--openrouter-chat (system user)
-  "POST a one-shot SYSTEM/USER chat completion to OpenRouter.
+(defun joe/--claude-chat (system user)
+  "Run a one-shot SYSTEM/USER completion through the local `claude' CLI.
 Return a cons (STATUS . VALUE) where STATUS is one of:
-  ok         VALUE is the reply's content string
-  no-key     no API key, or curl unavailable
-  ratelimit  429 survived `joe/openrouter-max-retries' backed-off retries
+  ok         VALUE is the reply text
+  no-key     no `claude' on PATH, or it is not logged in
+  ratelimit  the CLI reported a usage or rate limit
   error      VALUE is a short diagnostic string
 Callers get to distinguish \"model declined to tag this\" from \"the
 request never happened\" -- collapsing those two into nil is what makes
 a failed batch look like a successfully untagged one."
-  (let ((key (joe/--openrouter-api-key)))
-    (if (not (and key (executable-find "curl")))
+  (let ((claude (executable-find "claude"))
+        (timeout (executable-find "timeout")))
+    (if (not claude)
         (cons 'no-key nil)
-      (let ((attempt 0) (result nil))
-        (while (and (null result) (<= attempt joe/openrouter-max-retries))
-          (joe/--openrouter-pace)
-          (let* ((payload (json-serialize
-                           `((model . ,joe/openrouter-model)
-                             (temperature . 0)
-                             (max_tokens . 60)
-                             (messages
-                              . ,(vector `((role . "system") (content . ,system))
-                                         `((role . "user") (content . ,user)))))))
-                 (out (ignore-errors
-                        (with-temp-buffer
-                          (insert payload)
-                          (let ((coding-system-for-read 'utf-8)
-                                (coding-system-for-write 'utf-8))
-                            (call-process-region
-                             (point-min) (point-max) "curl" t t nil
-                             "-s" "--max-time" "30" "-w" "\n__HTTP__%{http_code}"
-                             "https://openrouter.ai/api/v1/chat/completions"
-                             "-H" (concat "Authorization: Bearer " key)
-                             "-H" "Content-Type: application/json"
-                             "--data-binary" "@-"))
-                          (buffer-string))))
-                 (code (and out (if (string-match "__HTTP__\\([0-9]+\\)" out)
-                                    (match-string 1 out) "?")))
-                 (body (and out (replace-regexp-in-string
-                                 "\n__HTTP__[0-9]+\\'" "" out))))
-            (cond
-             ((null out) (setq result (cons 'error "curl failed")))
-             ((equal code "429")
-              ;; Back off and retry: usually the 20/min cap, not the daily quota.
-              (setq attempt (1+ attempt))
-              (when (<= attempt joe/openrouter-max-retries)
-                (sleep-for (* 5.0 attempt)))
-              (when (> attempt joe/openrouter-max-retries)
-                (setq result (cons 'ratelimit nil))))
-             ((not (equal code "200"))
-              (setq result (cons 'error (format "HTTP %s" code))))
-             (t
-              (let* ((json (ignore-errors
-                             (json-parse-string body :object-type 'alist
-                                                :array-type 'list)))
-                     (content (alist-get 'content
-                                         (alist-get 'message
-                                                    (car (alist-get 'choices json))))))
-                (setq result (if content (cons 'ok content)
-                               (cons 'error "unparseable response"))))))))
-        (or result (cons 'ratelimit nil))))))
+      (let* ((flags (list "-p"
+                          "--model" joe/claude-cli-model
+                          "--system-prompt" system
+                          ;; A closed-vocabulary word-pick wants one model turn
+                          ;; and nothing else.  Left alone the CLI brings this
+                          ;; machine's whole Claude Code setup along --
+                          ;; ~/.claude/CLAUDE.md, auto-memory, skills, MCP
+                          ;; servers, hooks -- which is latency and stray
+                          ;; context in the prompt.  Passing `--system-prompt'
+                          ;; is NOT enough to stop that: tested, and the memory
+                          ;; index still came through.  `--safe-mode' drops the
+                          ;; lot while leaving auth and model choice working,
+                          ;; which `--bare' would not (it ignores the OAuth
+                          ;; login and demands an API key).
+                          "--safe-mode"
+                          "--tools" ""
+                          "--no-session-persistence"
+                          "--output-format" "json"))
+             (program (or timeout claude))
+             (args (if timeout
+                       (append (list (number-to-string joe/claude-cli-timeout)
+                                     claude)
+                               flags)
+                     flags))
+             (rc nil)
+             (out (with-temp-buffer
+                    (insert user)
+                    (let ((coding-system-for-read 'utf-8)
+                          (coding-system-for-write 'utf-8)
+                          ;; Neutral cwd: whatever project Emacs happens to be
+                          ;; visiting would otherwise contribute its own
+                          ;; .claude/ settings to the run.
+                          (default-directory temporary-file-directory))
+                      (setq rc (condition-case err
+                                   (apply #'call-process-region
+                                          (point-min) (point-max)
+                                          program t t nil args)
+                                 (error (error-message-string err)))))
+                    (buffer-string)))
+             (json (joe/--claude-result-json out))
+             (text (alist-get 'result json))
+             (blob (downcase (or text out ""))))
+        (cond
+         ((not (integerp rc)) (cons 'error (format "%s" rc)))
+         ((eql rc 124) (cons 'error "timed out"))
+         ((and (zerop rc)
+               (equal (alist-get 'subtype json) "success")
+               (null (alist-get 'is_error json))
+               (stringp text))
+          (cons 'ok text))
+         ;; Distinguished so a sweep can stop and say so: a spent quota makes
+         ;; every remaining entry fail too, and re-running later is the fix.
+         ((string-match-p "usage limit\\|rate limit\\|too many requests\\|429" blob)
+          (cons 'ratelimit nil))
+         ((string-match-p "not logged in\\|/login\\|invalid api key\\|authentication"
+                          blob)
+          (cons 'no-key nil))
+         (t (cons 'error
+                  (truncate-string-to-width
+                   (or (car (split-string (string-trim (or text out "")) "\n" t))
+                       (format "exit %d" rc))
+                   120))))))))
 
 (defvar joe/bib-keyword-guidance
   "Rules:
@@ -1444,7 +1458,7 @@ TITLE, AUTHOR and YEAR describe the book; optional EXTRA is an alist of
 further ((\"Publisher\" . VAL) ...) context -- a publisher or an abstract
 sharpens the guess considerably over a bare title.
 
-Return a cons (STATUS . TAGS) with STATUS from `joe/--openrouter-chat'.
+Return a cons (STATUS . TAGS) with STATUS from `joe/--claude-chat'.
 On \\='ok, TAGS is the reply filtered to the controlled vocabulary, so a
 chatty model cannot inject an off-vocabulary tag; it may legitimately be
 empty when nothing fits.  Never signals."
@@ -1459,7 +1473,7 @@ library, using a fixed controlled vocabulary.\n\n%s\n\nVocabulary: %s"
                              (format "\n%s: %s" (car kv)
                                      (truncate-string-to-width (cdr kv) 700)))
                            (seq-filter #'cdr (or extra '())) "")))
-         (res (joe/--openrouter-chat system user)))
+         (res (joe/--claude-chat system user)))
     (if (eq (car res) 'ok)
         (cons 'ok (seq-filter (lambda (w) (member w joe/bib-keywords))
                               (split-string (downcase (cdr res)) "[,;\n .]+" t)))
@@ -1766,9 +1780,9 @@ into any PDF found for it.  With a prefix argument, prompt for a LIMIT on
 how many entries to process in this run.
 
 Idempotent and resumable: entries tagged in an earlier run are no longer
-untagged, so re-running simply continues.  Stops cleanly if OpenRouter
-rate-limits, reporting what remains rather than silently leaving entries
-untagged.  Honors `joe/batch-import-dry-run'."
+untagged, so re-running simply continues.  Stops cleanly if the CLI's
+quota runs out, reporting what remains rather than silently leaving
+entries untagged.  Honors `joe/batch-import-dry-run'."
   (interactive (list (when current-prefix-arg
                        (read-number "Max entries this run: " 50))))
   (require 'citar)

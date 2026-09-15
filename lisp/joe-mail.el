@@ -29,9 +29,10 @@
       user-mail-address "josephheberpercy@gmail.com")
 
 ;;;;; Credentials
-;; Make the GPG-encrypted ~/.password-store a backend for auth-source, so API
-;; keys (e.g. openrouter.ai) are read decrypted on demand rather than living in
-;; a plaintext ~/.authinfo.  Harmless on hosts without a pass store —
+;; Make the GPG-encrypted ~/.password-store a backend for auth-source, so
+;; secrets (e.g. the Gmail app password) are read decrypted on demand rather
+;; than living in a plaintext ~/.authinfo.  Harmless on hosts without a pass
+;; store —
 ;; auth-source just falls through to its other sources.
 (auth-source-pass-enable)
 
