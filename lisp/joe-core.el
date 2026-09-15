@@ -268,9 +268,28 @@ initial non-graphical frame.  Skips the update unless both are real colors."
 (load custom-file 'noerror)
 
 ;; Automatically update file s after external changes
+;;
+;; `auto-revert-avoid-polling' switches the mechanism from a five-second stat
+;; loop over every file-visiting buffer to the OS file-notification interface.
+;; That matters more here than on most machines: this configuration opens files
+;; over TRAMP (`/su:root@...' turns up in recentf) and there is an sshfs
+;; storagebox on the VPS, and polling those means a stat round-trip per buffer
+;; per tick.
+;;
+;; The trade is real, and is why `auto-revert-interval' is set rather than left
+;; to rot: notification does not work on every remote or network filesystem,
+;; and where it silently does not, Emacs falls back to polling at this
+;; interval. If a file edited from both ends of the sshfs mount stops
+;; refreshing, this setting is the first suspect.
 (use-package autorevert
   :ensure nil
-  :hook (after-init . global-auto-revert-mode))
+  :hook (after-init . global-auto-revert-mode)
+  :custom
+  (auto-revert-avoid-polling t)
+  (auto-revert-interval 5)
+  ;; Keep the modeline's VC state honest after a branch switch made outside
+  ;; Emacs, which is the common case with magit driving from another frame.
+  (auto-revert-check-vc-info t))
 
 (use-package recentf
   :ensure nil
@@ -283,6 +302,61 @@ initial non-graphical frame.  Skips the update unless both are real colors."
   ;; and this file is loaded first, so the tilde would expand against the old
   ;; HOME and strand the history somewhere else.
   (recentf-save-file (locate-user-emacs-file "recentf")))
+
+;;;; ffap: do not let find-file touch the network
+;; `find-file' runs its argument past ffap, which treats a bare word that looks
+;; like a hostname as one and tries to resolve it. On this box that is not a
+;; slow path, it is a hanging one: nftables OUTPUT is policy-drop, so an
+;; unlisted port is a silent timeout rather than a refusal, and the Pi-hole
+;; sinkholes blocked names to `::'. Either way Emacs blocks on a lookup nobody
+;; asked for. `reject' means "no bare word is ever a machine name"; explicit
+;; URLs still work, because those go through a different test.
+;;
+;; Declared before it is set, as with `eshell-buffer-name' in joe-tools.el:
+;; ffap.el is not loaded yet, so a bare `setq' would warn about assigning to a
+;; free variable. Setting it ahead of the library is fine — `defcustom' leaves
+;; an already-bound variable alone — and has to be done that way round, since
+;; the whole point is for the value to be in place the first time ffap runs.
+(defvar ffap-machine-p-known)
+(setq ffap-machine-p-known 'reject)
+
+;;;; Kill ring
+;; Without the first of these, copying in another program and then killing
+;; text in Emacs loses the external copy: Emacs overwrites the system clipboard
+;; without ever having recorded what was in it. Saving it to the kill ring
+;; first makes `M-y' able to reach it.
+(setq save-interprogram-paste-before-kill t
+      ;; Killing the same text twice should not cost two `M-y' presses to step
+      ;; past.
+      kill-do-not-save-duplicates t)
+
+;;;; isearch
+;; The search itself was left at defaults while everything around it — consult
+;; integration in joe-completion.el, `joe/isearch-other-window' in
+;; joe-windows.el — was configured. These are the built-in behaviour knobs.
+;;
+;; `isearch-wrap-pause' is the one that fixes a documented annoyance rather
+;; than adding a feature: joe-ui.el names isearch wrapping as a source of the
+;; system alert sound it went to the trouble of silencing. `no-ding' wraps
+;; straight through without the bell, which removes the cause instead of
+;; muting the symptom.
+(setq isearch-lazy-count t
+      lazy-count-prefix-format "(%s/%s) "   ;"(3/17) " ahead of the prompt
+      ;; Let `M-<' / `M->' / `C-v' move between matches during a search
+      ;; instead of ending it.
+      isearch-allow-motion t
+      ;; Scroll without breaking out of the search.
+      isearch-allow-scroll t
+      ;; `C-r' mid-search goes to the previous match immediately, rather than
+      ;; spending the first press just turning the search around.
+      isearch-repeat-on-direction-change t
+      isearch-wrap-pause 'no-ding)
+
+;; Search for the thing already under point, without typing it out. `C-.' is
+;; free in isearch-mode-map; embark's global `C-c .' (joe-completion.el) is a
+;; different key and does not collide.
+(with-eval-after-load 'isearch
+  (keymap-set isearch-mode-map "C-." #'isearch-forward-thing-at-point))
 
 ;;;; Global keybindings and miscellaneous settings
 (keymap-global-set "<f7>" (lambda ()
@@ -306,14 +380,30 @@ initial non-graphical frame.  Skips the update unless both are real colors."
   :hook (prog-mode . rainbow-delimiters-mode))
 
 ;;;; Custom utility functions
-(defun quote-pdf nil
+(defun quote-pdf ()
+  "Copy the PDF selection into an Org quote block in the other window.
+Point stays in the PDF, so the next selection follows immediately.
+
+This used to call `(ace-window 1)' for its side effect, which — with
+`aw-dispatch-always' set — stopped mid-command to ask which window to
+use.  `other-window-for-scrolling' picks the same window that C-M-v
+scrolls (most recently used; see joe-windows.el), so the common case of
+a PDF beside its note needs no prompt at all.
+
+It also yanked twice, with `yank' and then `org-yank', inserting the
+quote into the block a second time."
   (interactive)
   (pdf-view-kill-ring-save)
-  (ace-window 1)
-  (org-insert-structure-template "quote") 
-  (org-open-line 1)
-  (yank nil)
-  (org-yank nil))
+  (when (one-window-p)
+    (user-error "No other window to put the quote in"))
+  (with-selected-window (other-window-for-scrolling)
+    (org-insert-structure-template "quote")
+    (org-open-line 1)
+    (org-yank nil)))
+
+;; Lives on the research prefix (`C-c f', joe-research.el) despite being
+;; defined here; it was previously unbound entirely.
+(keymap-global-set "C-c f q" #'quote-pdf)
 
 (defvar joe/last-untitled-buffer nil
   "The buffer most recently created by `xah-new-empty-buffer'.
@@ -374,17 +464,8 @@ Version: 2022-04-05"
   ([remap describe-key]      . helpful-key)
   ([remap describe-command]  . helpful-command))
 
-;;;; ace-window
-(use-package ace-window
-  :ensure t
-  :bind
-  ("M-o" . ace-window)
-  :config
-  (setq aw-scope 'global)
-  (setq aw-keys '(?a ?s ?d ?f ?g ?h ?j ?k ?l))
-  (setq aw-background nil)
-  (setq aw-leading-char-style 'char)
-  (setq aw-dispatch-always t))
+;; ace-window moved to joe-windows.el, alongside the commands that call
+;; `aw-select' (`joe/ace-window-prefix', `joe/ace-window-one-command').
 
 ;;;; Daemon exit diagnostics
 ;; The daemon has been dying with no Windows crash dump and no Code

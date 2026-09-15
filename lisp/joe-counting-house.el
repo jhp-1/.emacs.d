@@ -93,8 +93,10 @@
   (interactive)
   (delete-other-windows)
   (find-file (joe/ch--file joe/ch-ledger-id))
-  (split-window-right)
-  (other-window 1)
+  ;; `split-window-right' returns the new window, so select it directly rather
+  ;; than splitting and then walking to it with `other-window' — which depends
+  ;; on the cyclic ordering happening to put the new window next.
+  (select-window (split-window-right))
   (joe/ch-recent-traces))
 
 (defun joe/ch--pdf-annotated-p (file)
