@@ -1,9 +1,10 @@
 ;;; joe-ui.el --- UI-related configuration -*- lexical-binding: t; -*-
 
 ;;;; Follow mouse
-;; Focus-follows-mouse conflicts with Windows' own focus system when using
-;; multiple frames; disable it there.
-(when (not (eq system-type 'windows-nt))
+;; Off on Android, where there is no mouse to follow: the port synthesises
+;; mouse motion from touch events, so this would turn an incidental drag of
+;; the thumb across a window boundary into a window switch.
+(unless (bound-and-true-p joe/android-p)
   (setq mouse-autoselect-window t))
 
 ;;;; Cursor
@@ -11,7 +12,7 @@
 
 ;;;; Bell
 ;; Emacs dings on every trivial event (point hitting end of buffer, C-g in the
-;; minibuffer, isearch wrapping), which on Windows is the loud system alert
+;; minibuffer, isearch wrapping), and on some hosts that is the system alert
 ;; sound rather than a discreet beep.  `ring-bell-function' takes precedence
 ;; over `visible-bell', so pointing it at `ignore' silences the audible bell
 ;; and the screen flash together; `visible-bell' is pinned to nil so nothing
@@ -69,7 +70,10 @@
   :ensure t
   :config
   (setq-default olivetti-body-width 0.7)
-  (setq olivetti-minimum-body-width 80)
+  ;; A phone in portrait is narrower than the 80-column floor, so olivetti
+  ;; would refuse to narrow anything and <f6> would look like a no-op.
+  (setq olivetti-minimum-body-width
+        (if (bound-and-true-p joe/android-p) 30 80))
   (setq olivetti-recall-visual-line-mode-entry-state t)
   :bind
   ("<f6>" . olivetti-mode))
@@ -78,9 +82,15 @@
 ;; Font faces are a window-system concept; on the appliance's TTY fontaine
 ;; warns "Cannot use Fontaine in a terminal emulator". The console font is set
 ;; system-wide instead (services.kmscon -> Aporetic Serif Mono).
+;; Skipped on Android for a different reason: Aporetic is not installed there
+;; (Android fonts come from ~/fonts and nothing else), and fontaine would set
+;; the face to a family that does not exist. joe-android.el sets the default
+;; height directly instead, which is the only part of the preset that matters
+;; on one small screen.
 (use-package fontaine
   :ensure t
-  :unless (bound-and-true-p joe/console-appliance-p)
+  :unless (or (bound-and-true-p joe/console-appliance-p)
+              (bound-and-true-p joe/android-p))
   :config
   (setq fontaine-presets
         '((regular
@@ -101,11 +111,69 @@
 ;; no fontconfig fallback: whatever single font is configured must contain the
 ;; glyph or you get a replacement box. Aporetic is not nerd-patched, hence the
 ;; row of "?" boxes. Skip the icon packages there rather than render rubbish.
+;; `joe/no-icon-font-p' (early-init.el) covers the appliance's console and
+;; Android alike -- same symptom, replacement boxes, for unrelated reasons.
 (use-package nerd-icons
   :ensure t
-  :unless (bound-and-true-p joe/console-appliance-p))
+  :unless (bound-and-true-p joe/no-icon-font-p))
 ;; nerd-icons-completion is fully configured in joe-completion.el
 ;; (marginalia hook + nerd-icons-completion-mode); no duplicate block needed here.
+;;;; Sunrise/sunset theme switching
+;; Shared by every host with no OS appearance setting it can poll: the
+;; appliance's TTY has none, and Android has one but will not let an app read
+;; it (see the auto-dark block below). Uses built-in solar.el rather than the
+;; `circadian' package - it is ~25 lines and avoids a dependency on machines
+;; where installing things is deliberately awkward.
+;;
+;; Coordinates are approximate on purpose: 0.1 degree is well under a minute of
+;; error, and being 50km out moves sunrise by about two minutes.
+(require 'solar)
+(setq calendar-latitude 51.5
+      calendar-longitude -0.1
+      calendar-location-name "London")
+
+(defun joe/solar-times ()
+  "Return (SUNRISE . SUNSET) today as float hours, or nil if unavailable.
+Polar day/night and other edge cases make `solar-sunrise-sunset' return a
+list without usable times; callers must handle nil."
+  (let* ((data (solar-sunrise-sunset (calendar-current-date)))
+         (rise (caar data))
+         (set (car (cadr data))))
+    (when (and (numberp rise) (numberp set))
+      (cons rise set))))
+
+(defun joe/solar-theme-for-now ()
+  "Return the theme appropriate to the current time of day."
+  (let ((times (joe/solar-times)))
+    (if (null times)
+        'modus-operandi          ; no sun data: default to light
+      (let* ((now (decode-time))
+             (hour (+ (nth 2 now) (/ (nth 1 now) 60.0))))
+        (if (and (>= hour (car times)) (< hour (cdr times)))
+            'modus-operandi
+          'modus-vivendi)))))
+
+(defun joe/solar-apply-theme ()
+  "Load whichever theme suits the current time, if not already active."
+  (interactive)
+  (let ((want (joe/solar-theme-for-now)))
+    (unless (memq want custom-enabled-themes)
+      ;; Disable the other one first, or its faces linger underneath and
+      ;; show through wherever the incoming theme does not override them.
+      (mapc #'disable-theme custom-enabled-themes)
+      (load-theme want t))))
+
+(defun joe/solar-enable ()
+  "Apply the time-appropriate theme now, then re-check hourly.
+Polled rather than scheduled precisely at each event: the times shift
+daily, the device sleeps and wakes across boundaries, and a timer that
+fired while suspended is simply missed.  Polling costs microseconds and
+cannot drift out of step.  Worst case the switch is up to an hour late;
+<f8> (`modus-themes-toggle') still overrides by hand until the next
+check."
+  (joe/solar-apply-theme)
+  (run-at-time t 3600 #'joe/solar-apply-theme))
+
 ;;;; auto-dark-emacs
 ;; Use modus-vivendi (dark) and modus-operandi (light) — both are built into
 ;; Emacs 29+ and always available, avoiding theme-not-found errors at startup.
@@ -114,16 +182,54 @@
 ;; has none, so it errors with "Could not determine a viable theme detection
 ;; mechanism!" and leaves whichever theme happens to be first — modus-vivendi,
 ;; i.e. dark. Skip it there and pin the light theme explicitly.
+;; Android is opt-in rather than skipped, and the reason it looked impossible
+;; is worth writing down. auto-dark CAN read the Android system theme: its
+;; `termux' method shells out to `cmd uimode night', a plain Android command,
+;; not anything from termux-api. What it will not do is CHOOSE that method
+;; here, because its detector gates the branch on
+;;
+;;     (and (eq system-type 'gnu/linux) (member 'dbus features) ...)
+;;
+;; which describes a terminal Emacs running INSIDE Termux, where system-type is
+;; gnu/linux -- not this APK, where it is `android'. So the cond falls through
+;; to "Could not determine a viable theme detection mechanism!" and strands
+;; whichever theme loaded first. `auto-dark-detection-method' is a defcustom
+;; that bypasses the detector entirely when non-nil, so naming the method is the
+;; whole fix.
+;;
+;; Still gated on `joe/android-auto-dark' (joe-android.el, off by default)
+;; because the polling is a subprocess and `cmd' may want a shell UID -- see
+;; that variable's docstring for the one-line check to run on the device.
 (use-package auto-dark
   :ensure t
-  :unless (bound-and-true-p joe/console-appliance-p)
+  :unless (or (bound-and-true-p joe/console-appliance-p)
+              (and (bound-and-true-p joe/android-p)
+                   (not (bound-and-true-p joe/android-auto-dark))))
   :custom
   (custom-safe-themes t)
   (auto-dark-themes '((modus-vivendi) (modus-operandi)))
-  (auto-dark-polling-interval-seconds 5)
   :hook
   ((auto-dark-dark-mode auto-dark-light-mode) . joe--sync-pdf-midnight-colors)
-  :init (auto-dark-mode))
+  :init
+  ;; Set before `auto-dark-mode', which reads both at startup. A five-second
+  ;; poll is nothing on a desktop and a subprocess every five seconds on a
+  ;; phone; sixty is still far quicker than anyone notices a theme change.
+  (if (bound-and-true-p joe/android-p)
+      (setq auto-dark-detection-method 'termux
+            auto-dark-polling-interval-seconds 60)
+    (setq auto-dark-polling-interval-seconds 5))
+  (auto-dark-mode))
+
+;; Standing in for auto-dark when it is not running. Previously this pinned
+;; modus-operandi, which is why the phone was permanently light while the
+;; desktops followed the system; it now follows the sun instead, which is the
+;; closest thing available once the OS setting is off limits. <f8>
+;; (`modus-themes-toggle') still switches by hand until the next hourly check.
+;; Skipped when `joe/android-auto-dark' is on, or the two would fight over the
+;; first theme.
+(when (and (bound-and-true-p joe/android-p)
+           (not (bound-and-true-p joe/android-auto-dark)))
+  (joe/solar-enable))
 
 (when (bound-and-true-p joe/console-appliance-p)
   ;; On a TTY Emacs emits SGR 39;49 for `default' - "whatever the terminal's
@@ -178,68 +284,25 @@
   ;; The trailing "-------" is not modus and not a theme: stock Emacs defaults
   ;; `mode-line-end-spaces' to (:eval (unless (display-graphic-p) "-%-")),
   ;; where %- means "fill the rest of the line with dashes". It is gated on
-  ;; display-graphic-p, which is exactly why it never appears in the GUI on
-  ;; Windows and only showed up here. The mode-line face already spans the
-  ;; full window width, so nothing needs filling.
+  ;; display-graphic-p, which is exactly why it never appears in a GUI and
+  ;; only showed up here. The mode-line face already spans the full window
+  ;; width, so nothing needs filling.
   (setq-default mode-line-end-spaces "")
 
   ;;;; Sunrise/sunset theme switching
-  ;; Replaces auto-dark on this box, which has no OS appearance setting to
-  ;; poll. Uses built-in solar.el rather than the `circadian' package - it is
-  ;; ~25 lines and avoids a dependency on a machine where installing things is
-  ;; deliberately awkward. Coordinates are approximate on purpose: 0.1 degree
-  ;; is well under a minute of error, and being 50km out moves sunrise by
-  ;; about two minutes.
-  (require 'solar)
-  (setq calendar-latitude 51.5
-        calendar-longitude -0.1
-        calendar-location-name "London")
-
-  (defun joe/console--solar-times ()
-    "Return (SUNRISE . SUNSET) today as float hours, or nil if unavailable.
-Polar day/night and other edge cases make `solar-sunrise-sunset' return a
-list without usable times; callers must handle nil."
-    (let* ((data (solar-sunrise-sunset (calendar-current-date)))
-           (rise (caar data))
-           (set (car (cadr data))))
-      (when (and (numberp rise) (numberp set))
-        (cons rise set))))
-
-  (defun joe/console-theme-for-now ()
-    "Return the theme appropriate to the current time of day."
-    (let ((times (joe/console--solar-times)))
-      (if (null times)
-          'modus-operandi          ; no sun data: default to light
-        (let* ((now (decode-time))
-               (hour (+ (nth 2 now) (/ (nth 1 now) 60.0))))
-          (if (and (>= hour (car times)) (< hour (cdr times)))
-              'modus-operandi
-            'modus-vivendi)))))
-
-  (defun joe/console-apply-solar-theme ()
-    "Load whichever theme suits the current time, if not already active."
-    (interactive)
-    (let ((want (joe/console-theme-for-now)))
-      (unless (memq want custom-enabled-themes)
-        ;; Disable the other one first, or its faces linger underneath and
-        ;; show through wherever the incoming theme does not override them.
-        (mapc #'disable-theme custom-enabled-themes)
-        (load-theme want t))))
-
-  ;; Re-evaluated hourly rather than scheduled precisely at each event: the
-  ;; times shift daily, the machine sleeps and wakes across boundaries, and a
-  ;; timer that fired while suspended is simply missed. Polling is a few
-  ;; microseconds and cannot drift out of step. Worst case the switch is up to
-  ;; an hour late; <f8> still overrides manually until the next check.
-  (run-at-time t 3600 #'joe/console-apply-solar-theme)
-
-  (joe/console-apply-solar-theme)
+  ;; Defined at top level now, because Android needs it too.
+  (joe/solar-enable)
   (joe/console-sync-default-face)
   (joe/console-flatten-mode-line))
 
 ;;;; ultra-scroll
+;; Not on Android: it retrofits pixel-precise scrolling onto mouse wheel and
+;; trackpad events, and the port already does its own precision scrolling from
+;; touch events (`touch-screen-precision-scroll'). Two systems driving the same
+;; window is how you get scroll that fights the finger.
 (use-package ultra-scroll
   :ensure t
+  :unless (bound-and-true-p joe/android-p)
   :config
   (ultra-scroll-mode 1))
 

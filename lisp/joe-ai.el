@@ -5,7 +5,7 @@
 ;; via agent-shell.  Chosen over claude-code-ide.el and claude-code.el
 ;; specifically because of this machine: both of those drive the real CLI TUI
 ;; inside a terminal emulator, and every terminal backend they support is
-;; either a native module we cannot build here (vterm, ghostel — see the
+;; either a native module we cannot build here (vterm — see the
 ;; `joe/nix-emacs-p' note in early-init.el) or the visibly glitchier `eat'.
 ;; agent-shell renders the conversation itself, so its whole dependency chain
 ;; — shell-maker, acp — is pure Elisp and installs from MELPA unchanged.
@@ -18,8 +18,8 @@
 ;;; Code:
 
 ;; Called from `:config', so it is genuinely defined by the time it runs — the
-;; declaration only quiets the byte-compiler, which matters on the Windows host
-;; where compile-angel is enabled.
+;; declaration only quiets the byte-compiler, which matters wherever
+;; compile-angel is enabled.
 (declare-function agent-shell-anthropic-make-authentication "agent-shell-anthropic")
 (declare-function agent-shell-make-environment-variables "agent-shell")
 
@@ -89,7 +89,7 @@
             (agent-shell-make-environment-variables
              "CLAUDE_CODE_EXECUTABLE" claude))))
   :bind
-  ;; `C-c a' is org-agenda and `C-c s' is ghostel on Windows; `C-c z' is the
+  ;; `C-c a' is org-agenda and `C-c s' is eshell; `C-c z' is the
   ;; nearest free key, and matches the C-c z-as-REPL-toggle convention.
   ("C-c z" . agent-shell))
 

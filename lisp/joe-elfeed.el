@@ -1,11 +1,10 @@
 ;;; joe-elfeed.el --- Elfeed feeds + Karl-Voit-style tag vocabulary -*- lexical-binding: t; -*-
 
-;; Performance on Windows: fetch with curl, never url.el.  Emacs's own
-;; `url-retrieve' is single-threaded and flaky on Windows (the same lesson
-;; joe-research.el learned for zotra); curl fetches every feed in parallel over
-;; Schannel and `--compressed' asks for gzip.  curl.exe ships in System32 on
-;; Win10+ and is already on `exec-path' (init.el), and this build reports libz,
-;; so `--compressed' is safe.  The DB lives in .emacs.d/elfeed/ (gitignored).
+;; Fetch with curl, never url.el.  Emacs's own `url-retrieve' is
+;; single-threaded and unreliable under load (the same lesson joe-research.el
+;; learned for zotra), whereas curl fetches every feed in parallel and
+;; `--compressed' asks for gzip.  The DB lives in .emacs.d/elfeed/
+;; (gitignored).
 
 (use-package elfeed
   :ensure t

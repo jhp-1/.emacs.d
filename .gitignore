@@ -29,3 +29,6 @@ url/
 .last-package-update-day
 network-security.data
 daemon-exit.log
+
+# Generated intermediate for tools/mkreadme.py
+tools/iso.txt

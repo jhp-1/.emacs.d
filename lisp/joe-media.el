@@ -4,8 +4,8 @@
 ;; Two unrelated media concerns share this file: mpv for ambient noise
 ;; playback, and the transmission RPC client for torrents.
 ;;
-;; Long-form ambient/background noise tracks from joe/noises-dir (D:\Noises,
-;; opus files, several hundred MB / 8-12 hours each).
+;; Long-form ambient/background noise tracks from joe/noises-dir (opus files,
+;; several hundred MB / 8-12 hours each).
 ;;
 ;; Not bongo: its only backends are mpg123/vlc/mplayer (checked its actual
 ;; source - no mpv support in the MELPA snapshot, which is itself six years
