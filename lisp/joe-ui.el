@@ -51,6 +51,9 @@
 (use-package modus-themes
   :ensure t
   :config
+  ;; Org tables and other spacing-sensitive faces must stay monospaced when
+  ;; prose uses the proportional default face.
+  (setq modus-themes-mixed-fonts t)
   (setq modus-themes-to-toggle '(modus-operandi modus-vivendi))
   :bind
   ("<f8>" . modus-themes-toggle))
@@ -102,6 +105,8 @@
            :variable-pitch-height 140)
           (t
            :default-height 120
+           :fixed-pitch-family "Aporetic Serif Mono"
+           :fixed-pitch-serif-family "Aporetic Serif Mono"
            :variable-pitch-height 120)))
   (fontaine-set-preset 'regular))
 

@@ -39,6 +39,10 @@
   (setq org-log-into-drawer t)
   (setq org-enforce-todo-dependencies t)
   (setq org-hide-emphasis-markers t)
+  ;; Keep mathematical notation readable without changing the source.
+  ;; Entities such as \cdot and \ne display as glyphs, and Org raises
+  ;; subscript and superscript forms.
+  (setq org-pretty-entities t)
   (setq org-use-speed-commands t)
   (setq org-goto-max-level 3)
   (setq org-hide-block-startup t)
