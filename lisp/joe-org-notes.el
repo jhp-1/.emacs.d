@@ -43,6 +43,10 @@
   ;; Entities such as \cdot and \ne display as glyphs, and Org raises
   ;; subscript and superscript forms.
   (setq org-pretty-entities t)
+  (setq org-preview-latex-default-process 'dvisvgm)
+  (setq org-preview-latex-image-directory
+        (expand-file-name "emacs/org-latex/"
+                          (or (getenv "XDG_CACHE_HOME") "~/.cache/")))
   (setq org-use-speed-commands t)
   (setq org-goto-max-level 3)
   (setq org-hide-block-startup t)
