@@ -78,7 +78,9 @@
                          (require 'joe-ai)
                          (require 'joe-elfeed)
                          (require 'joe-mail)
-                         (require 'joe-media))))
+                         (require 'joe-media)
+                         (when (bound-and-true-p joe/nix-emacs-p)
+                           (require 'joe-music)))))
 
 ;; Restore GC settings and report startup time
 (add-hook 'emacs-startup-hook
