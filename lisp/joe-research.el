@@ -976,8 +976,9 @@ Uses the cached PDF scan; see `joe/rescan-annotated-pdfs'."
 (keymap-global-set "C-c f H" #'joe/import-all-pdf-annotations)
 
 ;;;; Batch book import (Downloads -> bib + library)
-;; Unattended importer: resolve each PDF's ISBN (filename first, then the PDF's
-;; text layer), fetch a bib entry via zotra, append it, copy the PDF into the
+;; Unattended importer: convert EPUBs to BOOX-sized linked PDFs, resolve each
+;; PDF's ISBN (filename first, then the PDF text layer), fetch a bib entry via
+;; zotra, append it, copy the PDF into the
 ;; library as <citekey>.pdf, write metadata, auto-tag it from the controlled
 ;; keyword vocabulary via an LLM, and -- on a verified copy -- delete the
 ;; Downloads original.  Anything it cannot resolve is left in place and
@@ -987,6 +988,43 @@ Uses the cached PDF scan; see `joe/rescan-annotated-pdfs'."
 (defvar joe/batch-import-dry-run nil
   "When non-nil, `joe/batch-import-books' reports what it would do but
 makes no changes: no bib writes, no file copies, no deletions.")
+
+(defvar joe/epub-to-boox-converter
+  (expand-file-name "epub-to-boox-pdf.py" (expand-file-name "~/bin"))
+  "Python converter used by `joe/batch-import-books' for EPUB input.")
+
+(defun joe/--prepare-book-for-import (source)
+  "Return a preparation plist for SOURCE, converting EPUB to a temporary PDF.
+The plist always has :source.  On success it also has :file, and for an EPUB
+:epub-source and :temp-dir.  On failure it has :error."
+  (if (not (string-match-p "\\.epub\\'" (downcase source)))
+      (list :source source :file source)
+    (let* ((python (executable-find "python3"))
+           (converter (expand-file-name joe/epub-to-boox-converter))
+           (temp-dir (make-temp-file "joe-epub-import-" t))
+           (pdf (expand-file-name
+                 (concat (file-name-base source) ".pdf") temp-dir))
+           (log (generate-new-buffer " *epub-convert*"))
+           (rc nil))
+      (unwind-protect
+          (cond
+           ((not python)
+            (list :source source :temp-dir temp-dir :error "python3 not found"))
+           ((not (file-readable-p converter))
+            (list :source source :temp-dir temp-dir
+                  :error (format "converter not readable: %s" converter)))
+           (t
+            (setq rc (call-process python nil log nil converter source pdf))
+            (if (and (zerop rc) (file-readable-p pdf)
+                     (> (or (file-attribute-size (file-attributes pdf)) 0) 0))
+                (list :source source :file pdf :epub-source source
+                      :temp-dir temp-dir)
+              (list :source source :temp-dir temp-dir
+                    :error
+                    (with-current-buffer log
+                      (truncate-string-to-width
+                       (string-trim (buffer-string)) 500 nil nil t))))))
+        (kill-buffer log)))))
 
 (defun joe/--pdftotext-program ()
   "Return a usable pdftotext program path, or nil."
@@ -1271,109 +1309,81 @@ break citar-denote note references."
                 (when year (list (format "-XMP-dc:date=%s" year)))
                 (list (joe/--native-path file))))))))
 
-;;;;; LLM auto-tagging (local Claude Code CLI)
+;;;;; LLM auto-tagging (local Codex CLI)
 ;; Tagging is otherwise "on-touch" (`joe/bib-set-keywords', by hand), which
 ;; has no natural trigger for a batch of unattended imports -- those would
 ;; otherwise sit untagged indefinitely, invisibly (`joe/bib-audit-keywords'
 ;; only catches off-vocabulary keywords, not a missing keywords field).  Ask
-;; the cheapest model behind the local `claude' CLI to pick from
+;; a cheap model behind the local `codex' CLI to pick from
 ;; `joe/bib-keywords' instead.  The reply is whitelist-filtered against that
 ;; same vocabulary, so a chatty or careless model can wrap its answer in
 ;; explanation but cannot inject an off-vocabulary tag; any failure (no CLI,
-;; not logged in, quota spent, unparseable reply) just yields no tags rather
+;; not logged in, quota spent, unparseable reply) is reported rather
 ;; than interrupting the import.  Source-supplied keywords are still stripped
 ;; unconditionally on fetch (`joe/bib-strip-keywords') -- this only ever adds
 ;; fresh, in-vocabulary tags afterward.
 ;;
-;; This used to POST to OpenRouter's free tier, which needed an API key in
-;; auth-source and 3.2s pacing to stay under 20 requests/minute.  The CLI is
-;; already authenticated and paces itself (a call takes 4-15s), so both went
-;; away.  What replaced them is the flag list in `joe/--claude-chat', which
-;; exists to keep the tagger from inheriting this machine's own Claude Code
-;; configuration.
+;; This used to call Claude Code, but that binary is no longer installed.
+;; Codex is authenticated through the desktop account.  The flag list in
+;; `joe/--codex-chat' keeps a one-word tagging job ephemeral, read-only, and
+;; independent of the user's normal Codex configuration and repository rules.
 
 (defvar joe/batch-import-auto-tag t
   "When non-nil, `joe/batch-import-books' asks an LLM to choose keywords
 for each newly-committed entry from `joe/bib-keywords'.  Set to nil to
-skip tagging (e.g. no `claude' CLI, or its quota is spent) without
+skip tagging (e.g. no `codex' CLI, or its quota is spent) without
 losing the setting.")
 
-(defvar joe/claude-cli-model "claude-haiku-4-5"
-  "Model passed to `claude --model' to auto-tag imported books.
+(defvar joe/codex-cli-model "gpt-5.6-terra"
+  "Model passed to `codex exec --model' to auto-tag imported books.
 The task is closed-vocabulary word-picking, not reasoning, so the
-smallest and cheapest model in the family is plenty.  Pinned to an exact
-ID rather than the `haiku' alias, so that a future Haiku release cannot
-quietly change how a part-tagged library gets tagged from here on.")
+cheap Terra model is sufficient.  Pin the ID so a future default-model
+change cannot quietly change how a partly tagged library is classified.")
 
-(defvar joe/claude-cli-timeout 120
-  "Seconds to allow one `claude -p' call before killing it.
-Calls normally finish in 4-15s.  `call-process-region' has no timeout of
+(defvar joe/codex-cli-timeout 180
+  "Seconds to allow one `codex exec' call before killing it.
+`call-process-region' has no timeout of
 its own -- a wedged CLI would hang Emacs outright, with no C-g -- so the
 call runs under coreutils `timeout' whenever that is on PATH.")
 
-(defun joe/--claude-result-json (output)
-  "Return the `--output-format json' object in OUTPUT as an alist, or nil.
-The CLI writes one JSON object on stdout, but `call-process-region'
-intermixes stderr into the same buffer, so scan backwards for the last
-line that actually parses rather than trusting all of OUTPUT to be JSON."
-  (let ((lines (nreverse (split-string output "\n" t)))
-        (json nil))
-    (while (and lines (null json))
-      (let ((line (string-trim (pop lines))))
-        (when (string-prefix-p "{" line)
-          (setq json (ignore-errors
-                       (json-parse-string line :object-type 'alist
-                                          :array-type 'list
-                                          :false-object nil
-                                          :null-object nil))))))
-    json))
-
-(defun joe/--claude-chat (system user)
-  "Run a one-shot SYSTEM/USER completion through the local `claude' CLI.
+(defun joe/--codex-chat (system user)
+  "Run a one-shot SYSTEM/USER completion through the local `codex' CLI.
 Return a cons (STATUS . VALUE) where STATUS is one of:
   ok         VALUE is the reply text
-  no-key     no `claude' on PATH, or it is not logged in
+  no-key     no `codex' on PATH, or it is not logged in
   ratelimit  the CLI reported a usage or rate limit
   error      VALUE is a short diagnostic string
 Callers get to distinguish \"model declined to tag this\" from \"the
 request never happened\" -- collapsing those two into nil is what makes
 a failed batch look like a successfully untagged one."
-  (let ((claude (executable-find "claude"))
+  (let ((codex (executable-find "codex"))
         (timeout (executable-find "timeout")))
-    (if (not claude)
+    (if (not codex)
         (cons 'no-key nil)
-      (let* ((flags (list "-p"
-                          "--model" joe/claude-cli-model
-                          "--system-prompt" system
-                          ;; A closed-vocabulary word-pick wants one model turn
-                          ;; and nothing else.  Left alone the CLI brings this
-                          ;; machine's whole Claude Code setup along --
-                          ;; ~/.claude/CLAUDE.md, auto-memory, skills, MCP
-                          ;; servers, hooks -- which is latency and stray
-                          ;; context in the prompt.  Passing `--system-prompt'
-                          ;; is NOT enough to stop that: tested, and the memory
-                          ;; index still came through.  `--safe-mode' drops the
-                          ;; lot while leaving auth and model choice working,
-                          ;; which `--bare' would not (it ignores the OAuth
-                          ;; login and demands an API key).
-                          "--safe-mode"
-                          "--tools" ""
-                          "--no-session-persistence"
-                          "--output-format" "json"))
-             (program (or timeout claude))
+      (let* ((reply-file (make-temp-file "joe-codex-tag-"))
+             (flags (list "exec"
+                          "--model" joe/codex-cli-model
+                          "--sandbox" "read-only"
+                          "--ephemeral"
+                          "--ignore-user-config"
+                          "--ignore-rules"
+                          "--skip-git-repo-check"
+                          "--color" "never"
+                          "-C" temporary-file-directory
+                          "--output-last-message" reply-file
+                          "-"))
+             (program (or timeout codex))
              (args (if timeout
-                       (append (list (number-to-string joe/claude-cli-timeout)
-                                     claude)
+                       (append (list (number-to-string joe/codex-cli-timeout)
+                                     codex)
                                flags)
                      flags))
              (rc nil)
              (out (with-temp-buffer
-                    (insert user)
+                    (insert system "\n\n" user
+                            "\n\nDo not call tools. Return only the requested tags.")
                     (let ((coding-system-for-read 'utf-8)
                           (coding-system-for-write 'utf-8)
-                          ;; Neutral cwd: whatever project Emacs happens to be
-                          ;; visiting would otherwise contribute its own
-                          ;; .claude/ settings to the run.
                           (default-directory temporary-file-directory))
                       (setq rc (condition-case err
                                    (apply #'call-process-region
@@ -1381,29 +1391,28 @@ a failed batch look like a successfully untagged one."
                                           program t t nil args)
                                  (error (error-message-string err)))))
                     (buffer-string)))
-             (json (joe/--claude-result-json out))
-             (text (alist-get 'result json))
+             (text (when (file-readable-p reply-file)
+                     (string-trim
+                      (with-temp-buffer
+                        (insert-file-contents reply-file)
+                        (buffer-string)))))
              (blob (downcase (or text out ""))))
-        (cond
-         ((not (integerp rc)) (cons 'error (format "%s" rc)))
-         ((eql rc 124) (cons 'error "timed out"))
-         ((and (zerop rc)
-               (equal (alist-get 'subtype json) "success")
-               (null (alist-get 'is_error json))
-               (stringp text))
-          (cons 'ok text))
-         ;; Distinguished so a sweep can stop and say so: a spent quota makes
-         ;; every remaining entry fail too, and re-running later is the fix.
-         ((string-match-p "usage limit\\|rate limit\\|too many requests\\|429" blob)
-          (cons 'ratelimit nil))
-         ((string-match-p "not logged in\\|/login\\|invalid api key\\|authentication"
-                          blob)
-          (cons 'no-key nil))
-         (t (cons 'error
-                  (truncate-string-to-width
-                   (or (car (split-string (string-trim (or text out "")) "\n" t))
-                       (format "exit %d" rc))
-                   120))))))))
+        (unwind-protect
+            (cond
+             ((not (integerp rc)) (cons 'error (format "%s" rc)))
+             ((eql rc 124) (cons 'error "timed out"))
+             ((and (zerop rc) (stringp text)) (cons 'ok text))
+             ((string-match-p "usage limit\\|rate limit\\|too many requests\\|429" blob)
+              (cons 'ratelimit nil))
+             ((string-match-p "not logged in\\|/login\\|invalid api key\\|authentication"
+                              blob)
+              (cons 'no-key nil))
+             (t (cons 'error
+                      (truncate-string-to-width
+                       (or (car (split-string (string-trim (or text out "")) "\n" t))
+                           (format "exit %d" rc))
+                       120))))
+          (ignore-errors (delete-file reply-file)))))))
 
 (defvar joe/bib-keyword-guidance
   "Rules:
@@ -1443,7 +1452,7 @@ TITLE, AUTHOR and YEAR describe the book; optional EXTRA is an alist of
 further ((\"Publisher\" . VAL) ...) context -- a publisher or an abstract
 sharpens the guess considerably over a bare title.
 
-Return a cons (STATUS . TAGS) with STATUS from `joe/--claude-chat'.
+Return a cons (STATUS . TAGS) with STATUS from `joe/--codex-chat'.
 On \\='ok, TAGS is the reply filtered to the controlled vocabulary, so a
 chatty model cannot inject an off-vocabulary tag; it may legitimately be
 empty when nothing fits.  Never signals."
@@ -1458,7 +1467,7 @@ library, using a fixed controlled vocabulary.\n\n%s\n\nVocabulary: %s"
                              (format "\n%s: %s" (car kv)
                                      (truncate-string-to-width (cdr kv) 700)))
                            (seq-filter #'cdr (or extra '())) "")))
-         (res (joe/--claude-chat system user)))
+         (res (joe/--codex-chat system user)))
     (if (eq (car res) 'ok)
         (cons 'ok (seq-filter (lambda (w) (member w joe/bib-keywords))
                               (split-string (downcase (cdr res)) "[,;\n .]+" t)))
@@ -1543,6 +1552,7 @@ candidates as having come from the PDF text layer."
 (defun joe/--commit-import (result)
   "Perform the side effects for an :ok RESULT.  Mutate and return RESULT."
   (let* ((file (plist-get result :file))
+         (epub-source (plist-get result :epub-source))
          (entry (plist-get result :entry))
          (parsed (plist-get result :parsed))
          (citekey (joe/--append-entry-to-bib entry))
@@ -1570,7 +1580,16 @@ candidates as having come from the PDF text layer."
     (if (and (file-exists-p dest)
              (> (or (file-attribute-size (file-attributes dest)) 0) 0))
         (condition-case err
-            (progn (delete-file file delete-by-moving-to-trash)
+            (progn
+              ;; A converted PDF is scratch; the EPUB in Downloads is the
+              ;; original.  Remove the scratch directly and trash the source
+              ;; only after the library copy has been verified.
+              (if epub-source
+                  (progn
+                    (when (file-exists-p file) (delete-file file))
+                    (delete-file epub-source delete-by-moving-to-trash)
+                    (setq result (plist-put result :source-deleted t)))
+                (delete-file file delete-by-moving-to-trash))
                    (setq result (plist-put result :deleted t)))
           (error (setq result (plist-put result :delete-error
                                          (error-message-string err)))))
@@ -1592,7 +1611,8 @@ candidates as having come from the PDF text layer."
         (insert (make-string 72 ?-) "\n\n")
         (dolist (r results)
           (let ((status (plist-get r :status))
-                (fname (file-name-nondirectory (plist-get r :file))))
+                (fname (file-name-nondirectory
+                        (or (plist-get r :source) (plist-get r :file)))))
             (pcase status
               ('ok
                (let ((verify (eq (plist-get r :strength) 'weak)))
@@ -1644,9 +1664,10 @@ candidates as having come from the PDF text layer."
 
 ;;;;; Entry point
 (defun joe/batch-import-books (&optional dir)
-  "Batch-import book PDFs into the citar/zotra library.
+  "Batch-import PDF and EPUB books into the citar/zotra library.
 Operates on the marked files when called from Dired, otherwise on every
-*.pdf in DIR (default ~/Downloads).  Honors `joe/batch-import-dry-run'."
+PDF or EPUB in DIR (default ~/Downloads).  EPUBs are converted to linked,
+screen-sized PDFs before import.  Honors `joe/batch-import-dry-run'."
   (interactive)
   (require 'zotra)
   (require 'citar)
@@ -1654,39 +1675,55 @@ Operates on the marked files when called from Dired, otherwise on every
   (let* ((raw (if (derived-mode-p 'dired-mode)
                   (dired-get-marked-files nil nil nil t)
                 (directory-files (or dir (expand-file-name "~/Downloads"))
-                                 t "\\.pdf\\'")))
-         ;; Filter to PDFs.  Use (not (file-directory-p)) rather than
+                                 t "\\.\\(pdf\\|epub\\)\\'")))
+         ;; Use (not (file-directory-p)) rather than
          ;; `file-regular-p': the latter is a `stat', and a retired host's
          ;; path-length limit made it return nil for long names, silently
          ;; dropping those books while `directory-files' listed them fine.
          ;; The weaker test is all this needs in any case.
          (files (seq-filter (lambda (f) (and (stringp f)
-                                             (string-match-p "\\.pdf\\'" (downcase f))
+                                             (string-match-p
+                                              "\\.\\(pdf\\|epub\\)\\'"
+                                              (downcase f))
                                              (not (file-directory-p f))))
                             raw))
          (total (length files))
          (i 0)
          (results '()))
     (when (zerop total)
-      (user-error "No PDF files to import"))
-    (dolist (file files)
+      (user-error "No PDF or EPUB files to import"))
+    (dolist (source files)
       (setq i (1+ i))
-      (message "[%d/%d] Importing %s…" i total (file-name-nondirectory file))
+      (message "[%d/%d] Importing %s…" i total (file-name-nondirectory source))
       (redisplay)
-      (let ((res (joe/--import-one-book file)))
-        (when (and (not joe/batch-import-dry-run)
-                   (eq (plist-get res :status) 'ok))
-          ;; Isolate each book: an unattended run over a whole Downloads
-          ;; folder must not lose the remaining books because one of them
-          ;; errored (a bad citekey, a locked file, a full disk).  Record
-          ;; the failure and carry on.
-          (setq res (condition-case err
-                        (joe/--commit-import res)
-                      (error
-                       (setq res (plist-put res :status 'failed))
-                       (plist-put res :reason
-                                  (format "commit error: %s"
-                                          (error-message-string err)))))))
+      (let* ((prep (joe/--prepare-book-for-import source))
+             (temp-dir (plist-get prep :temp-dir))
+             (res nil))
+        (unwind-protect
+            (progn
+              (setq res
+                    (if-let ((problem (plist-get prep :error)))
+                        (list :status 'failed :reason
+                              (format "EPUB conversion failed: %s" problem)
+                              :file source :source source)
+                      (let ((r (joe/--import-one-book (plist-get prep :file))))
+                        (dolist (key '(:source :epub-source :temp-dir))
+                          (when (plist-member prep key)
+                            (setq r (plist-put r key (plist-get prep key)))))
+                        r)))
+              (when (and (not joe/batch-import-dry-run)
+                         (eq (plist-get res :status) 'ok))
+                ;; Isolate each book: one bad citekey, locked file, or full
+                ;; disk must not abort the rest of an unattended batch.
+                (setq res (condition-case err
+                              (joe/--commit-import res)
+                            (error
+                             (setq res (plist-put res :status 'failed))
+                             (plist-put res :reason
+                                        (format "commit error: %s"
+                                                (error-message-string err))))))))
+          (when (and temp-dir (file-directory-p temp-dir))
+            (ignore-errors (delete-directory temp-dir t))))
         (push res results)))
     (joe/--show-import-report (nreverse results) total)))
 
@@ -1839,10 +1876,6 @@ entries untagged.  Honors `joe/batch-import-dry-run'."
 
 (provide 'joe-research)
 ;;; joe-research.el ends here
-
-
-
-
 
 
 

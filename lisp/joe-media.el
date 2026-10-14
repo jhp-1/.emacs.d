@@ -70,6 +70,89 @@
 ;; base "/transmission/" and the endpoint is base + "rpc", so the apparent
 ;; mismatch with transmission-rpc-path is not one.
 
+(use-package geoip
+  :ensure t
+  :defer t)
+
+(declare-function geoip-new-buffer "geoip" (path))
+(declare-function geoip-lookup "geoip" (geoip-buffer ip))
+
+;; DB-IP Country Lite is supplied by DB-IP under CC BY 4.0:
+;; https://db-ip.com/db/download/ip-to-country-lite
+(defconst joe/transmission-geoip-database
+  (expand-file-name "transmission/dbip-country-lite.mmdb"
+                    (or (getenv "XDG_CACHE_HOME") "~/.cache/"))
+  "Local IP-to-country database used by the Transmission peers buffer.")
+
+(defvar joe/transmission--geoip-buffer nil
+  "Buffer containing `joe/transmission-geoip-database'.")
+
+(defun joe/transmission--geoip-months ()
+  "Return the current and previous months in DB-IP's URL format."
+  (let* ((now (decode-time nil t))
+         (month (nth 4 now))
+         (year (nth 5 now))
+         (previous-month (if (= month 1) 12 (1- month)))
+         (previous-year (if (= month 1) (1- year) year)))
+    (list (format "%04d-%02d" year month)
+          (format "%04d-%02d" previous-year previous-month))))
+
+(defun joe/transmission--download-geoip-database ()
+  "Download the current free DB-IP country database.
+Try the previous month's database too, because a new monthly file can appear
+a few days after the start of the month."
+  (require 'url-handlers)
+  (let ((directory (file-name-directory joe/transmission-geoip-database)))
+    (make-directory directory t)
+    (let* ((prefix (expand-file-name ".dbip-country-lite-" directory))
+           (compressed (make-temp-file prefix nil ".mmdb.gz"))
+           (uncompressed (make-temp-file prefix))
+           downloaded)
+      (unwind-protect
+          (progn
+            (dolist (month (joe/transmission--geoip-months))
+              (unless downloaded
+                (condition-case nil
+                    (progn
+                      (message "Downloading the %s DB-IP country database..." month)
+                      (url-copy-file
+                       (format "https://download.db-ip.com/free/dbip-country-lite-%s.mmdb.gz"
+                               month)
+                       compressed t)
+                      (setq downloaded t))
+                  (error nil))))
+            (unless downloaded
+              (error "Could not download the DB-IP country database"))
+            (with-temp-buffer
+              (set-buffer-multibyte nil)
+              (unless (zerop (call-process "gzip" nil t nil "-dc" compressed))
+                (error "Could not decompress the DB-IP country database"))
+              (let ((coding-system-for-write 'no-conversion))
+                (write-region nil nil uncompressed nil 'silent)))
+            (rename-file uncompressed joe/transmission-geoip-database t)
+            (message "Downloaded the DB-IP country database"))
+        (dolist (file (list compressed uncompressed))
+          (when (file-exists-p file)
+            (delete-file file)))))))
+
+(defun joe/transmission--geoip-buffer ()
+  "Return a live buffer for the local DB-IP country database."
+  (unless (file-readable-p joe/transmission-geoip-database)
+    (joe/transmission--download-geoip-database))
+  (unless (buffer-live-p joe/transmission--geoip-buffer)
+    (require 'geoip)
+    (setq joe/transmission--geoip-buffer
+          (geoip-new-buffer joe/transmission-geoip-database)))
+  joe/transmission--geoip-buffer)
+
+(defun joe/transmission-peer-location (ip)
+  "Return the English country name associated with peer address IP."
+  (require 'geoip)
+  (let* ((record (geoip-lookup (joe/transmission--geoip-buffer) ip))
+         (country (or (alist-get 'country record)
+                      (alist-get 'registered_country record))))
+    (alist-get 'en (alist-get 'names country))))
+
 (use-package transmission
   :ensure t
   :commands (transmission transmission-add)
@@ -77,6 +160,11 @@
   :custom
   (transmission-host "localhost")
   (transmission-service 9091)
+  ;; transmission.el deliberately leaves this nil by default.  Supplying a
+  ;; local lookup function makes its otherwise-empty Location column useful
+  ;; without sending every connected peer address to a web API.
+  (transmission-geoip-function #'joe/transmission-peer-location)
+  (transmission-geoip-use-cache t)
   ;; Without this the buffers are static and progress only moves on a manual
   ;; `g'; these are the four views where live refresh is actually wanted.
   (transmission-refresh-modes '(transmission-mode

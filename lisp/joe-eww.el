@@ -8,6 +8,74 @@
 ;; joe-tools.el would have failed outright.
 
 ;;;; eww
+(defun joe/eww-pre-size-image (original data content-type width height
+                                       &optional max-width max-height)
+  "Render large EWW raster DATA once at its displayed size.
+Call ORIGINAL with the normal SHR arguments first.  If it would scale a
+WebP, PNG or JPEG during redisplay, use ImageMagick to make a PNG in memory.
+Return ORIGINAL's image if conversion is unavailable or fails."
+  (let* ((window (get-buffer-window (current-buffer) t))
+         (format (if (symbolp content-type)
+                     (symbol-name content-type)
+                   content-type)))
+    (if (not (and (derived-mode-p 'eww-mode)
+                  window
+                  (eq (framep (window-frame window)) 'pgtk)
+                  (stringp data)
+                  (member format '("image/webp" "image/png" "image/jpeg"))
+                  (executable-find "magick")))
+        (funcall original data content-type width height max-width max-height)
+      ;; Image callbacks can run while a terminal client is the selected
+      ;; frame, even when the EWW buffer is visible in a PGTK frame.  SHR and
+      ;; `image-size' otherwise see a 30x30 terminal placeholder.
+      (with-selected-frame (window-frame window)
+        (let ((image (funcall original data content-type width height
+                              max-width max-height)))
+          (condition-case nil
+              (let* ((display-size (image-size image t))
+                     (native-size (image-size (create-image data nil t) t))
+                     (target-width (truncate (car display-size)))
+                     (target-height (truncate (cdr display-size))))
+                (if (or (< target-width 1) (< target-height 1)
+                        (and (<= (car native-size) target-width)
+                             (<= (cdr native-size) target-height)))
+                    image
+                  (let ((output (generate-new-buffer " *eww-sized-image*")))
+                    (unwind-protect
+                        (progn
+                          (with-current-buffer output (set-buffer-multibyte nil))
+                          (with-temp-buffer
+                            (set-buffer-multibyte nil)
+                            (insert data)
+                            (let ((coding-system-for-read 'binary)
+                                  (coding-system-for-write 'binary))
+                              (if (eq 0 (call-process-region
+                                         (point-min) (point-max) "magick" nil
+                                         (list output nil) nil
+                                         "-limit" "memory" "256MiB"
+                                         "-limit" "map" "512MiB"
+                                         "-limit" "disk" "256MiB"
+                                         "-limit" "time" "5"
+                                         (concat (substring format 6) ":-")
+                                         "-resize"
+                                         (format "%dx%d>" target-width target-height)
+                                         "png:-"))
+                                  (with-current-buffer output
+                                    (let* ((resized (create-image
+                                                     (buffer-string) 'png t
+                                                     :ascent (plist-get (cdr image) :ascent)))
+                                           (size (image-size resized t)))
+                                      ;; Invalid image data displays as a 30x30
+                                      ;; placeholder.  Never replace the original
+                                      ;; with one just because magick exited 0.
+                                      (if (and (<= (abs (- (car size) target-width)) 2)
+                                               (<= (abs (- (cdr size) target-height)) 2))
+                                          resized
+                                        image)))
+                                image))))
+                      (kill-buffer output)))))
+            (error image)))))))
+
 (use-package eww
   :ensure nil
   :init
@@ -24,6 +92,16 @@
         (if (bound-and-true-p joe/android-p) "/sdcard/Download/" "~/Downloads/"))
   (setq eww-history t)
   (setq eww-auto-rename-buffer 'title)
+  ;; Desktop article screenshots should leave some text visible beside them.
+  ;; Android has its own smaller cap below; reload an existing page to rescale.
+  (unless (bound-and-true-p joe/android-p)
+    (setq shr-max-image-proportion 0.60))
+  ;; SHR's :max-width/:max-height images are re-scaled at every pixel-wheel
+  ;; redraw.  Large article screenshots made each redraw take ~0.4 seconds on
+  ;; PGTK.  Pre-sizing once avoids that work without hiding images or changing
+  ;; the wheel behaviour in text buffers.
+  (when (and (bound-and-true-p joe/nix-emacs-p) (featurep 'pgtk))
+    (advice-add #'shr-rescale-image :around #'joe/eww-pre-size-image))
   (setq eww-readable-urls
 	'("https://plato.stanford.edu/.*"
           "https://www.marxists.org/.*"

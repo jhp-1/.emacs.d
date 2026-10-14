@@ -69,15 +69,31 @@
   :ensure t)
 
 ;;;; olivetti
+(defun joe/olivetti-sync-body-width (&optional frame)
+  "Set Olivetti width in FRAME from its fullscreen state.
+Without FRAME, use the selected frame."
+  (let* ((frame (or frame (selected-frame)))
+         (width (if (eq (frame-parameter frame 'fullscreen) 'fullboth)
+                    0.5 0.7)))
+    (walk-windows
+     (lambda (window)
+       (with-selected-window window
+         (when (and olivetti-mode
+                    (not (equal olivetti-body-width width)))
+           (setq-local olivetti-body-width width)
+           (olivetti-set-window window))))
+     'no-minibuf frame)))
+
 (use-package olivetti
   :ensure t
   :config
   (setq-default olivetti-body-width 0.7)
-  ;; A phone in portrait is narrower than the 80-column floor, so olivetti
-  ;; would refuse to narrow anything and <f6> would look like a no-op.
-  (setq olivetti-minimum-body-width
-        (if (bound-and-true-p joe/android-p) 30 80))
+  ;; Keep the floor low enough for the requested fractions on smaller frames.
+  (setq olivetti-minimum-body-width 30)
   (setq olivetti-recall-visual-line-mode-entry-state t)
+  (add-hook 'olivetti-mode-hook #'joe/olivetti-sync-body-width)
+  ;; Also catches a buffer first displayed after its mode hook ran.
+  (add-hook 'window-state-change-functions #'joe/olivetti-sync-body-width)
   :bind
   ("<f6>" . olivetti-mode))
 
@@ -305,9 +321,29 @@ check."
 ;; trackpad events, and the port already does its own precision scrolling from
 ;; touch events (`touch-screen-precision-scroll'). Two systems driving the same
 ;; window is how you get scroll that fights the finger.
+
+;; The G502 HERO advertises high-resolution wheel events, but PGTK currently
+;; receives coarse 110-220 px deltas from it.  ultra-scroll applies each delta
+;; in one jump and deliberately does no interpolation.  Use Emacs's built-in
+;; mouse interpolation on this host instead; it animates each detent in several
+;; small steps.  The EWW image cap in joe-eww.el avoids jumbo image lines here.
+(when (and (bound-and-true-p joe/nix-emacs-p) (featurep 'pgtk))
+  (require 'pixel-scroll)
+  (setq pixel-scroll-precision-interpolate-mice t
+        ;; Also interpolate if PGTK does not classify the wheel as a mouse.
+        pixel-scroll-precision-large-scroll-height 20
+        pixel-scroll-precision-interpolation-factor 0.30
+        pixel-scroll-precision-interpolation-total-time 0.04
+        pixel-scroll-precision-interpolation-between-scroll 0.005)
+  (pixel-scroll-precision-mode 1))
+
 (use-package ultra-scroll
   :ensure t
-  :unless (bound-and-true-p joe/android-p)
+  :unless (or (bound-and-true-p joe/android-p)
+              (and (bound-and-true-p joe/nix-emacs-p) (featurep 'pgtk)))
+  ;; With only :config this package stays deferred, so the mode is never
+  ;; enabled until another command happens to load ultra-scroll.
+  :demand t
   :config
   (ultra-scroll-mode 1))
 

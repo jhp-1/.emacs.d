@@ -20,6 +20,8 @@
 ;; Called from `:config', so it is genuinely defined by the time it runs — the
 ;; declaration only quiets the byte-compiler, which matters wherever
 ;; compile-angel is enabled.
+;; (declare-function agent-shell-openai-make-authentication
+;;                   "agent-shell-openai")
 (declare-function agent-shell-anthropic-make-authentication "agent-shell-anthropic")
 (declare-function agent-shell-make-environment-variables "agent-shell")
 
@@ -56,19 +58,34 @@
 (use-package agent-shell
   :ensure t
   :defer t
+  :hook (agent-shell-mode . olivetti-mode)
   ;; `:config', not `:init'.  All three settings live in agent-shell-anthropic,
   ;; which agent-shell.el requires — so in `:init' the constructor below is a
   ;; void function and startup dies with a use-package error.  Nothing reads
   ;; these before the package loads, so deferring them costs nothing.
   :config
+  (setq agent-shell-header-style 'text)
   ;; Reuse the subscription login the `claude' CLI already holds, rather than
   ;; putting an API key in a file that lives in a public git repo.  Refresh it
   ;; with `claude setup-token' if sessions start failing to authenticate.
   (setq agent-shell-anthropic-authentication
         (agent-shell-anthropic-make-authentication :login t))
+  ;; (setq agent-shell-openai-authentication
+  ;;     (agent-shell-openai-make-authentication :login t))
+  ;; Codex comes from Nix on this machine. Keep agent-shell on the store-backed
+  ;; ACP binary and give Codex a real terminal environment; Emacs otherwise
+  ;; launches it with TERM=dumb and stale TERMINFO_DIRS entries.
+  ;; (setq agent-shell-openai-codex-acp-command
+  ;;       (list (or (executable-find "codex-acp") "codex-acp")))
+  ;; (setq agent-shell-openai-codex-environment
+  ;;       (append
+  ;;        (agent-shell-make-environment-variables
+  ;;         "TERM" "xterm-256color"
+  ;;         "TERMINFO_DIRS" "/run/current-system/sw/share/terminfo")
+  ;;        '("NO_COLOR")))
   ;; Preselect rather than force, so the picker still lists Codex, Gemini et al
   ;; for the times a second opinion is worth the keystrokes.
-  (setq agent-shell-preferred-agent-config '(preselect . claude-code))
+  (setq agent-shell-preferred-agent-config '(preselect . codex))
   (when (bound-and-true-p joe/noexec-home-p)
     (setq agent-shell-anthropic-claude-acp-command
           (list "node" joe/claude-acp-program))
@@ -91,7 +108,16 @@
   :bind
   ;; `C-c a' is org-agenda and `C-c s' is eshell; `C-c z' is the
   ;; nearest free key, and matches the C-c z-as-REPL-toggle convention.
-  ("C-c z" . agent-shell))
+  ;; Its uppercase companion switches among existing agent sessions.
+  (("C-c z" . agent-shell)
+   ("C-c Z" . agent-shell-switch-buffer)))
+
+(use-package agent-shell-notifications
+  ;; Keep this small package as a visible source checkout: it is not in the
+  ;; package archives used by this configuration.
+  :load-path "~/projects/agent-shell-notifications"
+  :after agent-shell
+  :hook (agent-shell-mode . agent-shell-notifications-mode))
 
 (provide 'joe-ai)
 ;;; joe-ai.el ends here
