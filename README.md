@@ -8,9 +8,9 @@ documents and correspondence, and it does the work that a library needs.
 - Denote names each note with a time stamp. It links the notes, and it puts
   one note inside another.
 - Org mode builds the agenda, captures new items, and searches with `org-ql`.
-- The Counting House is a research system: a hub, a ledger, a commonplace book
-  and field notes. Each capture records its source. One command collects the
-  annotations from the documents.
+- The Counting House is a collection for study and writing. Its menu opens a
+  note shelf, linked or random walks, contextual backlinks and passage search.
+  Captures record their sources. One command collects document annotations.
 - citar and zotra keep the bibliography. Importers read the annotations and
   the new books. exiftool writes the keywords. A controlled vocabulary limits
   them.
@@ -69,3 +69,4 @@ Each machine has a constant that identifies it, and `early-init.el` sets them.
 
 `NOTES.md` holds the long version. The comments in each module hold more than
 that, and they sit beside the code that they explain.
+

@@ -274,7 +274,15 @@
   (("C-c n f" . consult-denote-find)
    ("C-c n g" . consult-denote-grep))
   :config
-  (consult-denote-mode 1))
+  (consult-denote-mode 1)
+  ;; Note browsing can show text after a short pause. Keep the general
+  ;; library/file commands on their existing manual-preview settings.
+  ;; Consult looks up the outer command, including Denote's advised prompts.
+  (consult-customize
+   consult-denote-find consult-denote-grep
+   denote-open-or-create denote-link denote-find-link denote-find-backlink
+   joe/denote-transclude-file joe/denote-transclude-heading
+   :preview-key '(:debounce 0.3 any)))
 
 ;;;; consult-dir
 (use-package consult-dir
@@ -290,3 +298,4 @@
 
 (provide 'joe-completion)
 ;;; joe-completion.el ends here
+

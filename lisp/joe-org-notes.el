@@ -179,9 +179,25 @@ Lives in the `career/' project silo (git repo), not the notes root.")
     ("C-c n n" . denote-open-or-create)
     ("C-c n s" . denote-subdirectory)
     ("C-c n o" . denote-sort-dired)
+    ("C-c n B" . denote-backlinks)
     ("C-c n r" . denote-rename-file)))
 
 (add-hook 'dired-mode-hook #'denote-dired-mode-in-directories)
+
+;;;;; Browsing and walking
+;; These are views over the existing files. No new index or note format.
+(use-package denote-menu
+  :ensure t
+  :after denote
+  :commands (denote-menu-filter-by-keyword denote-menu-clear-filters)
+  :bind ("C-c n b" . denote-menu-list-notes))
+
+(use-package denote-explore
+  :ensure t
+  :after denote
+  :commands (denote-explore-random-keyword denote-explore-random-regex)
+  :bind (("C-c n w" . denote-explore-random-link)
+         ("C-c n W" . denote-explore-random-note)))
 
 ;;;;; denote-org
 ;; Denote's Org dynamic blocks live in their own package as of Denote 4 --
@@ -367,6 +383,8 @@ notes at once, the denote-files dblocks above are the better tool."
 (use-package org-ql
   :ensure t
   :defer t
+  :commands (org-ql-find org-ql-find-in-org-directory
+             org-ql-view org-ql-view-sidebar)
   :bind
   ("C-c n q" . org-ql-search))
 
@@ -375,3 +393,4 @@ notes at once, the denote-files dblocks above are the better tool."
 
 (provide 'joe-org-notes)
 ;;; joe-org-notes.el ends here
+

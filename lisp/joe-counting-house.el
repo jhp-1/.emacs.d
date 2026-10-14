@@ -1,23 +1,23 @@
-;;; joe-counting-house.el --- Counting House capture, menu, garden walk -*- lexical-binding: t; -*-
+;;; joe-counting-house.el --- Study, browsing, capture and review -*- lexical-binding: t; -*-
 
 ;;; Commentary:
-;; Operational layer for the Counting House research system (hub note
-;; 20260714T173000 in the Denote silo; full manual in note 20260714T191500).
-;; Provides capture templates with automatic reading provenance, refile
-;; plumbing, org-ql views, the garden-walk layout, a bulk annotation harvest
-;; built on the existing pdfannots machinery in joe-research.el, and a
-;; transient menu on C-c n c.
+;; Counting House is a collection used for study and local inquiries.
+;; The starting note is 20260714T173000; the study and writing guide is
+;; 20260714T191500. The menu exposes existing Denote and Org commands,
+;; alongside provenance captures, review views and PDF annotation harvest.
 
 ;;; Code:
 
 (defun joe/ch--file (id)
-  "Path of the Counting House satellite with Denote ID."
-  (denote-get-path-by-id id))
+  "Return the path of the Counting House note with Denote ID."
+  (or (denote-get-path-by-id id)
+      (user-error "No note with Denote identifier %s in %s" id denote-directory)))
 
 (defconst joe/ch-hub-id "20260714T173000")
 (defconst joe/ch-ledger-id "20260714T190100")
 (defconst joe/ch-commonplace-id "20260714T190200")
 (defconst joe/ch-fieldnotes-id "20260714T190300")
+(defconst joe/ch-guide-id "20260714T191500")
 
 (defun joe/ch-provenance ()
   "One-line provenance for the buffer being read."
@@ -67,6 +67,12 @@
   (list (joe/ch--file joe/ch-ledger-id)
         (joe/ch--file joe/ch-commonplace-id)))
 
+(defun joe/ch-trace-files ()
+  "Notes searched by the recent-records view.
+This includes field notes, which are not ordinary refile targets."
+  (append (joe/ch-refile-files)
+          (list (joe/ch--file joe/ch-fieldnotes-id))))
+
 (with-eval-after-load 'org
   (setq org-refile-targets '((nil :maxlevel . 3)
                              (joe/ch-refile-files :maxlevel . 3)))
@@ -82,22 +88,26 @@
     :title "Counting House: live questions"))
 
 (defun joe/ch-recent-traces ()
-  "Everything timestamped in the last 35 days, across the satellites."
+  "Show timestamped records from the last 35 days.
+This is a view of what was recorded, not a measure of reading activity."
   (interactive)
-  (org-ql-search (joe/ch-refile-files)
+  (org-ql-search (joe/ch-trace-files)
     '(ts :from -35)
-    :title "Counting House: last month's traces"))
+    :title "Counting House: recent records"))
 
-(defun joe/ch-garden-walk ()
-  "Ledger on the left, last month's traces on the right."
+(defun joe/ch-review ()
+  "Show questions beside recent records for an optional review."
   (interactive)
   (delete-other-windows)
   (find-file (joe/ch--file joe/ch-ledger-id))
   ;; `split-window-right' returns the new window, so select it directly rather
-  ;; than splitting and then walking to it with `other-window' — which depends
+  ;; than splitting and then walking to it with `other-window', which depends
   ;; on the cyclic ordering happening to put the new window next.
   (select-window (split-window-right))
   (joe/ch-recent-traces))
+
+(defalias 'joe/ch-garden-walk #'joe/ch-review
+  "Compatibility name for `joe/ch-review'. Exploratory walks use Denote Explore.")
 
 (defun joe/ch--pdf-annotated-p (file)
   "Non-nil if FILE's raw bytes mention markup annotation subtypes."
@@ -158,33 +168,46 @@ citar-denote note with the usual de-duplication, so re-running is safe."
 
 (require 'transient)
 (transient-define-prefix joe/counting-house ()
-  "Counting House."
+  "Browse, read, write and review the Counting House collection."
   [["Capture"
     ("q" "quotation"    (lambda () (interactive) (org-capture nil "cq")))
     ("f" "field note"   (lambda () (interactive) (org-capture nil "cf")))
     ("e" "evidence"     (lambda () (interactive) (org-capture nil "ce")))
     ("Q" "new question" (lambda () (interactive) (org-capture nil "cQ")))
     ("h" "hunch"        (lambda () (interactive) (org-capture nil "ch")))]
+   ["Browse"
+    ("b" "note shelf" denote-menu-list-notes)
+    ("o" "sorted shelf" denote-sort-dired)
+    ("g" "search notes" consult-denote-grep)
+    ("i" "find a passage" org-ql-find-in-org-directory)]
+   ["Connections"
+    (">" "outgoing links" denote-find-link)
+    ("<" "incoming passage" denote-find-backlink-with-location)
+    ("B" "backlinks" denote-backlinks)]]
+  [["Walk"
+    ("w" "linked step" denote-explore-random-link)
+    ("k" "keyword step" denote-explore-random-keyword)
+    ("x" "chosen shelf" denote-explore-random-regex)
+    ("W" "anywhere" denote-explore-random-note)]
    ["Visit"
-    ("u" "hub"          (lambda () (interactive) (find-file (joe/ch--file joe/ch-hub-id))))
-    ("l" "ledger"       (lambda () (interactive) (find-file (joe/ch--file joe/ch-ledger-id))))
-    ("m" "commonplace"  (lambda () (interactive) (find-file (joe/ch--file joe/ch-commonplace-id))))
-    ("n" "field notes"  (lambda () (interactive) (find-file (joe/ch--file joe/ch-fieldnotes-id))))]
-   ["Views"
+    ("u" "starting note" (lambda () (interactive) (find-file (joe/ch--file joe/ch-hub-id))))
+    ("l" "questions"     (lambda () (interactive) (find-file (joe/ch--file joe/ch-ledger-id))))
+    ("m" "quotations"    (lambda () (interactive) (find-file (joe/ch--file joe/ch-commonplace-id))))
+    ("n" "session notes" (lambda () (interactive) (find-file (joe/ch--file joe/ch-fieldnotes-id))))
+    ("G" "study guide"   (lambda () (interactive) (find-file (joe/ch--file joe/ch-guide-id))))]
+   ["Review"
     ("?" "live questions" joe/ch-open-questions)
-    ("r" "recent traces"  joe/ch-recent-traces)
-    ("w" "garden walk"    joe/ch-garden-walk)]
-   ["Session"
+    ("r" "recent records" joe/ch-recent-traces)
+    ("R" "review layout"  joe/ch-review)
+    ("v" "saved views"    org-ql-view)]]
+  [["Session"
     ("t" "25-min timer" (lambda () (interactive) (tmr "25" "counting house")))
     ("H" "harvest annotated PDFs" joe/ch-harvest)]])
 
 (define-key global-map (kbd "C-c n c") #'joe/counting-house)
 
-;; The org-transclusion bridge that used to sit here now lives in
-;; joe-org-notes.el, as `joe/denote-transclusion-add', alongside the denote and
-;; denote-org blocks. It was generic denote glue rather than Counting House
-;; machinery, and it had never run: it was guarded on org-transclusion being
-;; loaded, and the package was not installed. It is installed now.
+;; Heading transclusion lives in joe-org-notes.el, under C-c n t.
 
 (provide 'joe-counting-house)
 ;;; joe-counting-house.el ends here
+
