@@ -975,23 +975,23 @@ Uses the cached PDF scan; see `joe/rescan-annotated-pdfs'."
 
 (keymap-global-set "C-c f H" #'joe/import-all-pdf-annotations)
 
-;;;; Batch book import (Downloads -> bib + library)
-;; Unattended importer: convert EPUBs to BOOX-sized linked PDFs, resolve each
+;;;; Book import (source -> bib + library)
+;; Shared importer: convert EPUBs to BOOX-sized linked PDFs, resolve each
 ;; PDF's ISBN (filename first, then the PDF text layer), fetch a bib entry via
 ;; zotra, append it, copy the PDF into the
 ;; library as <citekey>.pdf, write metadata, auto-tag it from the controlled
 ;; keyword vocabulary via an LLM, and -- on a verified copy -- delete the
-;; Downloads original.  Anything it cannot resolve is left in place and
+;; source original.  Anything it cannot resolve is left in place and
 ;; listed in the *book-import-report* buffer.
 (require 'cl-lib)
 
 (defvar joe/batch-import-dry-run nil
-  "When non-nil, `joe/batch-import-books' reports what it would do but
+  "When non-nil, book import reports what it would do but
 makes no changes: no bib writes, no file copies, no deletions.")
 
 (defvar joe/epub-to-boox-converter
   (expand-file-name "epub-to-boox-pdf.py" (expand-file-name "~/bin"))
-  "Python converter used by `joe/batch-import-books' for EPUB input.")
+  "Python converter used by the book importer for EPUB input.")
 
 (defun joe/--prepare-book-for-import (source)
   "Return a preparation plist for SOURCE, converting EPUB to a temporary PDF.
@@ -1329,7 +1329,7 @@ break citar-denote note references."
 ;; independent of the user's normal Codex configuration and repository rules.
 
 (defvar joe/batch-import-auto-tag t
-  "When non-nil, `joe/batch-import-books' asks an LLM to choose keywords
+  "When non-nil, book import asks an LLM to choose keywords
 for each newly-committed entry from `joe/bib-keywords'.  Set to nil to
 skip tagging (e.g. no `codex' CLI, or its quota is spent) without
 losing the setting.")
@@ -1662,21 +1662,13 @@ candidates as having come from the PDF text layer."
              n-ok n-verify n-dup n-fail
              (if joe/batch-import-dry-run "  [dry run]" ""))))
 
-;;;;; Entry point
-(defun joe/batch-import-books (&optional dir)
-  "Batch-import PDF and EPUB books into the citar/zotra library.
-Operates on the marked files when called from Dired, otherwise on every
-PDF or EPUB in DIR (default ~/Downloads).  EPUBs are converted to linked,
-screen-sized PDFs before import.  Honors `joe/batch-import-dry-run'."
-  (interactive)
+;;;;; Entry points
+(defun joe/--import-books (raw)
+  "Import the PDF and EPUB paths in RAW and display an import report."
   (require 'zotra)
   (require 'citar)
   (require 'bibtex)
-  (let* ((raw (if (derived-mode-p 'dired-mode)
-                  (dired-get-marked-files nil nil nil t)
-                (directory-files (or dir (expand-file-name "~/Downloads"))
-                                 t "\\.\\(pdf\\|epub\\)\\'")))
-         ;; Use (not (file-directory-p)) rather than
+  (let* (;; Use (not (file-directory-p)) rather than
          ;; `file-regular-p': the latter is a `stat', and a retired host's
          ;; path-length limit made it return nil for long names, silently
          ;; dropping those books while `directory-files' listed them fine.
@@ -1727,7 +1719,45 @@ screen-sized PDFs before import.  Honors `joe/batch-import-dry-run'."
         (push res results)))
     (joe/--show-import-report (nreverse results) total)))
 
+(defun joe/batch-import-books (&optional dir)
+  "Batch-import PDF and EPUB books into the citar/zotra library.
+Operates on the marked files when called from Dired, otherwise on every
+PDF or EPUB in DIR (default ~/Downloads).  EPUBs are converted to linked,
+screen-sized PDFs before import.  Honors `joe/batch-import-dry-run'."
+  (interactive)
+  (joe/--import-books
+   (if (derived-mode-p 'dired-mode)
+       (dired-get-marked-files nil nil nil t)
+     (directory-files (or dir (expand-file-name "~/Downloads"))
+                      t "\\.\\(pdf\\|epub\\)\\'"))))
+
+(defun joe/import-book-at-point ()
+  "Import one book from the current PDF buffer or Dired selection.
+In Dired, use the marked file, or the file at point if nothing is marked.
+If more than one file is marked, signal an error instead of choosing one.
+Uses the batch import pipeline, including EPUB conversion, auto-tagging,
+the report, and deletion of the original after a verified copy.  Honors
+`joe/batch-import-dry-run'."
+  (interactive)
+  (let ((files (cond
+                ((derived-mode-p 'pdf-view-mode)
+                 (let ((file (buffer-file-name)))
+                   (unless file
+                     (user-error "This PDF buffer is not visiting a file"))
+                   (list file)))
+                ((derived-mode-p 'dired-mode)
+                 (dired-get-marked-files))
+                (t (user-error "Open a PDF or select one book in Dired")))))
+    (unless (= (length files) 1)
+      (user-error "Select exactly one book; %d files are marked" (length files)))
+    (unless (and (string-match-p "\\.\\(pdf\\|epub\\)\\'"
+                                 (downcase (car files)))
+                 (not (file-directory-p (car files))))
+      (user-error "Not a PDF or EPUB file: %s" (car files)))
+    (joe/--import-books files)))
+
 (keymap-global-set "C-c f b" #'joe/batch-import-books)
+(keymap-global-set "C-c f B" #'joe/import-book-at-point)
 
 ;;;; Tag sweep (backfill entries the importer left untagged)
 ;; Tagging is otherwise on-touch, which has no trigger for entries that

@@ -93,7 +93,7 @@
   (add-hook 'notmuch-mua-send-hook #'notmuch-mua-attachment-check)
 
   ;; Unread threads stand out in the search list; everything else inherits the
-  ;; theme.  Kept to two rules so the modus palette still does the work.
+  ;; theme.  Kept to two rules so the active theme's palette does the work.
   (setq notmuch-search-line-faces
         '(("unread" . notmuch-search-unread-face)
           ("flagged" . notmuch-search-flagged-face)))

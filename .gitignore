@@ -9,6 +9,7 @@ pdf-tools-bin/
 vendor/
 
 # Session/cache files
+agent-recall/
 auto-save-list/
 bookmarks
 custom.el

@@ -1,7 +1,7 @@
 ;;; joe-ai.el --- Coding agents in Emacs buffers -*- lexical-binding: t; -*-
 
 ;;; Commentary:
-;; Claude Code (and any other ACP-speaking agent) in a native Emacs buffer,
+;; Codex (and any other ACP-speaking agent) in a native Emacs buffer,
 ;; via agent-shell.  Chosen over claude-code-ide.el and claude-code.el
 ;; specifically because of this machine: both of those drive the real CLI TUI
 ;; inside a terminal emulator, and every terminal backend they support is
@@ -83,9 +83,11 @@
   ;;         "TERM" "xterm-256color"
   ;;         "TERMINFO_DIRS" "/run/current-system/sw/share/terminfo")
   ;;        '("NO_COLOR")))
-  ;; Preselect rather than force, so the picker still lists Codex, Gemini et al
-  ;; for the times a second opinion is worth the keystrokes.
-  (setq agent-shell-preferred-agent-config '(preselect . codex))
+  ;; Use Codex directly for new shells. Other agents remain available through
+  ;; their own launch commands or by changing this preference.
+  (setq agent-shell-preferred-agent-config 'codex
+        agent-shell-openai-default-model-id "gpt-6-sol"
+        agent-shell-openai-default-session-mode-id "agent-full-access")
   (when (bound-and-true-p joe/noexec-home-p)
     (setq agent-shell-anthropic-claude-acp-command
           (list "node" joe/claude-acp-program))
@@ -118,6 +120,29 @@
   :load-path "~/projects/agent-shell-notifications"
   :after agent-shell
   :hook (agent-shell-mode . agent-shell-notifications-mode))
+
+(defun joe/agent-recall-style-transcript ()
+  "Give an Agent Recall transcript a read-only reading layout."
+  (when agent-recall-transcript-mode
+    (visual-line-mode 1)
+    (olivetti-mode 1)
+    (when (derived-mode-p 'markdown-mode)
+      ;; Hide source punctuation without changing the transcript file.
+      (setq-local markdown-fontify-code-blocks-natively t)
+      (markdown-toggle-markup-hiding 1))))
+
+(use-package agent-recall
+  ;; Keep the upstream checkout visible and update it with git, just like
+  ;; agent-shell-notifications. Do not duplicate it in this config repo.
+  :load-path "~/projects/agent-recall"
+  :after agent-shell
+  :hook ((agent-shell-mode . agent-recall-track-sessions)
+         (agent-recall-transcript-mode . joe/agent-recall-style-transcript))
+  :config
+  (setq agent-recall-search-paths '("~/projects" "~/.emacs.d" "~/Notes" "~/Downloads")
+        agent-recall-extra-transcript-dirs '((:dir "~/.agent-shell/transcripts"))
+        agent-recall-search-function 'consult-ripgrep
+        agent-recall-browse-sort 'modified-desc))
 
 (provide 'joe-ai)
 ;;; joe-ai.el ends here

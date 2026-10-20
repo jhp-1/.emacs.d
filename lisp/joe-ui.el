@@ -46,17 +46,38 @@
 (add-hook 'server-after-make-frame-hook
           (lambda () (select-frame-set-input-focus (selected-frame))))
 
-;;;; modus-themes
-;; Built into Emacs 29+; :ensure t pulls a newer version from GNU ELPA if available.
+;;;; au-themes
+;; au-themes builds its faces on both Modus and Ef.  Keep the dependencies
+;; explicit so a fresh host can install them before loading either theme.
 (use-package modus-themes
   :ensure t
   :config
   ;; Org tables and other spacing-sensitive faces must stay monospaced when
   ;; prose uses the proportional default face.
-  (setq modus-themes-mixed-fonts t)
-  (setq modus-themes-to-toggle '(modus-operandi modus-vivendi))
+  (setq modus-themes-mixed-fonts t))
+
+(use-package ef-themes
+  :ensure t)
+
+(use-package au-themes
+  :vc (:url "https://github.com/szymonwilczek/au-themes")
+  :demand t
+  :config
+  (setq au-themes-toggle-themes '(au-parchment-day au-aurum-night))
   :bind
-  ("<f8>" . modus-themes-toggle))
+  ("<f8>" . joe/toggle-theme))
+
+(defun joe/toggle-theme ()
+  "Toggle between the configured light and dark au-themes."
+  (interactive)
+  (au-themes-load-theme
+   (if (memq 'au-aurum-night custom-enabled-themes)
+       'au-parchment-day
+     'au-aurum-night)))
+
+;; Keep PDF midnight colours in step with every theme change, including <f8>
+;; and the solar timer, not just changes initiated by auto-dark.
+(add-hook 'enable-theme-functions #'joe--sync-pdf-midnight-colors)
 
 ;;;; Modeline
 (use-package minions
@@ -167,12 +188,12 @@ list without usable times; callers must handle nil."
   "Return the theme appropriate to the current time of day."
   (let ((times (joe/solar-times)))
     (if (null times)
-        'modus-operandi          ; no sun data: default to light
+        'au-parchment-day         ; no sun data: default to light
       (let* ((now (decode-time))
              (hour (+ (nth 2 now) (/ (nth 1 now) 60.0))))
         (if (and (>= hour (car times)) (< hour (cdr times)))
-            'modus-operandi
-          'modus-vivendi)))))
+            'au-parchment-day
+          'au-aurum-night)))))
 
 (defun joe/solar-apply-theme ()
   "Load whichever theme suits the current time, if not already active."
@@ -190,19 +211,18 @@ Polled rather than scheduled precisely at each event: the times shift
 daily, the device sleeps and wakes across boundaries, and a timer that
 fired while suspended is simply missed.  Polling costs microseconds and
 cannot drift out of step.  Worst case the switch is up to an hour late;
-<f8> (`modus-themes-toggle') still overrides by hand until the next
+<f8> (`joe/toggle-theme') still overrides by hand until the next
 check."
   (joe/solar-apply-theme)
   (run-at-time t 3600 #'joe/solar-apply-theme))
 
 ;;;; auto-dark-emacs
-;; Use modus-vivendi (dark) and modus-operandi (light) — both are built into
-;; Emacs 29+ and always available, avoiding theme-not-found errors at startup.
+;; Use au-aurum-night (dark) and au-parchment-day (light).
 ;; joe--sync-pdf-midnight-colors is defined in joe-core.el.
 ;; auto-dark polls the OS for a light/dark appearance setting. A bare console
 ;; has none, so it errors with "Could not determine a viable theme detection
-;; mechanism!" and leaves whichever theme happens to be first — modus-vivendi,
-;; i.e. dark. Skip it there and pin the light theme explicitly.
+;; mechanism!" and leaves whichever theme happens to be first — au-aurum-night,
+;; i.e. dark. Skip it there and use the solar light/dark schedule instead.
 ;; Android is opt-in rather than skipped, and the reason it looked impossible
 ;; is worth writing down. auto-dark CAN read the Android system theme: its
 ;; `termux' method shells out to `cmd uimode night', a plain Android command,
@@ -228,9 +248,7 @@ check."
                    (not (bound-and-true-p joe/android-auto-dark))))
   :custom
   (custom-safe-themes t)
-  (auto-dark-themes '((modus-vivendi) (modus-operandi)))
-  :hook
-  ((auto-dark-dark-mode auto-dark-light-mode) . joe--sync-pdf-midnight-colors)
+  (auto-dark-themes '((au-aurum-night) (au-parchment-day)))
   :init
   ;; Set before `auto-dark-mode', which reads both at startup. A five-second
   ;; poll is nothing on a desktop and a subprocess every five seconds on a
@@ -245,7 +263,7 @@ check."
 ;; modus-operandi, which is why the phone was permanently light while the
 ;; desktops followed the system; it now follows the sun instead, which is the
 ;; closest thing available once the OS setting is off limits. <f8>
-;; (`modus-themes-toggle') still switches by hand until the next hourly check.
+;; (`joe/toggle-theme') still switches by hand until the next hourly check.
 ;; Skipped when `joe/android-auto-dark' is on, or the two would fight over the
 ;; first theme.
 (when (and (bound-and-true-p joe/android-p)
@@ -258,11 +276,11 @@ check."
   ;; Loading a theme therefore only recoloured faces carrying explicit colours
   ;; (the modeline), leaving the rest at the terminal's background. Pushing
   ;; bg-main/fg-main onto `default' ourselves puts the background back under
-  ;; the theme's control, so modus-themes-toggle (<f8>) genuinely switches
+  ;; the theme's control, so <f8> genuinely switches
   ;; light <-> dark instead of leaving a dark theme stranded on a white
   ;; terminal.
   (defun joe/console-sync-default-face (&rest _)
-    "Apply the active modus theme's main colours to the TTY `default' face."
+    "Apply the active theme's main colours to the TTY `default' face."
     (when (fboundp 'modus-themes-get-color-value)
       (let ((bg (modus-themes-get-color-value 'bg-main))
             (fg (modus-themes-get-color-value 'fg-main)))
@@ -272,7 +290,7 @@ check."
               (set-face-background 'default bg frame)
               (set-face-foreground 'default fg frame)))))))
 
-  ;; Modus draws the mode line's border as an :underline on a TTY (confirmed:
+  ;; Modus-based themes draw the mode line's border as an :underline on a TTY:
   ;; :underline "#5a5a5a" on mode-line/mode-line-active, "#a3a3a3" on
   ;; -inactive, with :box unspecified) - it substitutes one for the box it
   ;; cannot draw in a terminal. The mode line already reads as a distinct band
@@ -280,15 +298,15 @@ check."
   ;; the same hook as the face sync: modus reapplies its own faces on every
   ;; theme load, so a one-shot set-face-attribute would be undone by <f8>.
   (defun joe/console-flatten-mode-line (&rest _)
-    "Strip modus's TTY mode-line underline."
+    "Strip the TTY mode-line underline."
     (dolist (face '(mode-line mode-line-active mode-line-inactive))
       (when (facep face)
         (set-face-attribute face nil :underline nil :overline nil))))
 
   ;; `enable-theme-functions' (Emacs 29+) rather than
-  ;; `modus-themes-after-load-theme-hook': modus does NOT advise `load-theme'
+  ;; `modus-themes-after-load-theme-hook': Modus does NOT advise `load-theme'
   ;; (checked its source - the hook is only run from its own commands like
-  ;; modus-themes-toggle). Anything calling plain `load-theme' - the sunset
+  ;; joe/toggle-theme). Anything calling plain `load-theme' - the sunset
   ;; timer below, `M-x load-theme', a future package - would otherwise switch
   ;; the theme while silently skipping both fixes, leaving the TTY background
   ;; stranded and the mode-line underline back. enable-theme-functions is run
