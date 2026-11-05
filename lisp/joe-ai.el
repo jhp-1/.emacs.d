@@ -26,6 +26,44 @@
 (declare-function agent-shell-make-environment-variables "agent-shell")
 
 ;;;; agent-shell
+;; `pixel-scroll-precision-interpolate' forces repeated redisplay during a
+;; wheel gesture.  In a long Agent Shell buffer that can wedge Emacs's main
+;; thread inside native redisplay, so keep pixel scrolling but skip its
+;; animation in these buffers.
+(defun joe/agent-shell-disable-scroll-interpolation ()
+  "Use direct pixel scrolling in Agent Shell buffers on PGTK."
+  (when (and (bound-and-true-p joe/nix-emacs-p) (featurep 'pgtk))
+    (setq-local pixel-scroll-precision-interpolate-mice nil
+                pixel-scroll-precision-large-scroll-height nil)))
+
+(defvar-local joe/agent-shell-title-subscription nil
+  "Subscription that keeps this shell buffer named after its session title.")
+
+(defun joe/agent-shell-name-from-title (&optional event)
+  "Name this shell buffer after its session title, including EVENT updates.
+Keep the agent name so similarly titled sessions remain recognizable."
+  (when-let* ((title (or (map-elt (map-elt event :data) :title)
+                         (map-nested-elt agent-shell--state '(:session :title))))
+              (title (string-trim (car (split-string title "\n"))))
+              ((not (string-empty-p title)))
+              (agent (map-nested-elt agent-shell--state
+                                     '(:agent-config :buffer-name))))
+    (let ((short-title (if (> (length title) 50)
+                           (concat (substring title 0 47) "...")
+                         title)))
+      (shell-maker-set-buffer-name
+       (current-buffer) (format "%s: %s" agent short-title)))))
+
+(defun joe/agent-shell-track-title ()
+  "Use the session title as the buffer name shown by `consult-buffer'."
+  (unless joe/agent-shell-title-subscription
+    (setq joe/agent-shell-title-subscription
+          (agent-shell-subscribe-to
+           :shell-buffer (current-buffer)
+           :event 'session-title-changed
+           :on-event #'joe/agent-shell-name-from-title)))
+  (joe/agent-shell-name-from-title))
+
 ;; agent-shell talks to Claude through the ACP adapter, an npm package, NOT to
 ;; the `claude' binary directly.  Install it with:
 ;;
@@ -58,7 +96,9 @@
 (use-package agent-shell
   :ensure t
   :defer t
-  :hook (agent-shell-mode . olivetti-mode)
+  :hook ((agent-shell-mode . olivetti-mode)
+         (agent-shell-mode . joe/agent-shell-disable-scroll-interpolation)
+         (agent-shell-mode . joe/agent-shell-track-title))
   ;; `:config', not `:init'.  All three settings live in agent-shell-anthropic,
   ;; which agent-shell.el requires — so in `:init' the constructor below is a
   ;; void function and startup dies with a use-package error.  Nothing reads

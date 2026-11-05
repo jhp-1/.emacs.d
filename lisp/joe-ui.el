@@ -46,9 +46,9 @@
 (add-hook 'server-after-make-frame-hook
           (lambda () (select-frame-set-input-focus (selected-frame))))
 
-;;;; au-themes
-;; au-themes builds its faces on both Modus and Ef.  Keep the dependencies
-;; explicit so a fresh host can install them before loading either theme.
+;;;; Ef themes
+;; Ef builds its faces on Modus. Keep the dependency explicit so a fresh host
+;; installs it before loading either theme.
 (use-package modus-themes
   :ensure t
   :config
@@ -57,23 +57,18 @@
   (setq modus-themes-mixed-fonts t))
 
 (use-package ef-themes
-  :ensure t)
-
-(use-package au-themes
-  :vc (:url "https://github.com/szymonwilczek/au-themes")
-  :demand t
-  :config
-  (setq au-themes-toggle-themes '(au-parchment-day au-aurum-night))
+  :ensure t
   :bind
   ("<f8>" . joe/toggle-theme))
 
 (defun joe/toggle-theme ()
-  "Toggle between the configured light and dark au-themes."
+  "Toggle between `ef-day' and `ef-autumn'."
   (interactive)
-  (au-themes-load-theme
-   (if (memq 'au-aurum-night custom-enabled-themes)
-       'au-parchment-day
-     'au-aurum-night)))
+  (let ((next (if (memq 'ef-autumn custom-enabled-themes)
+                  'ef-day
+                'ef-autumn)))
+    (mapc #'disable-theme custom-enabled-themes)
+    (load-theme next t)))
 
 ;; Keep PDF midnight colours in step with every theme change, including <f8>
 ;; and the solar timer, not just changes initiated by auto-dark.
@@ -188,12 +183,12 @@ list without usable times; callers must handle nil."
   "Return the theme appropriate to the current time of day."
   (let ((times (joe/solar-times)))
     (if (null times)
-        'au-parchment-day         ; no sun data: default to light
+        'ef-day                   ; no sun data: default to light
       (let* ((now (decode-time))
              (hour (+ (nth 2 now) (/ (nth 1 now) 60.0))))
         (if (and (>= hour (car times)) (< hour (cdr times)))
-            'au-parchment-day
-          'au-aurum-night)))))
+            'ef-day
+          'ef-autumn)))))
 
 (defun joe/solar-apply-theme ()
   "Load whichever theme suits the current time, if not already active."
@@ -217,11 +212,11 @@ check."
   (run-at-time t 3600 #'joe/solar-apply-theme))
 
 ;;;; auto-dark-emacs
-;; Use au-aurum-night (dark) and au-parchment-day (light).
+;; Use ef-autumn (dark) and ef-day (light).
 ;; joe--sync-pdf-midnight-colors is defined in joe-core.el.
 ;; auto-dark polls the OS for a light/dark appearance setting. A bare console
 ;; has none, so it errors with "Could not determine a viable theme detection
-;; mechanism!" and leaves whichever theme happens to be first — au-aurum-night,
+;; mechanism!" and leaves whichever theme happens to be first — ef-autumn,
 ;; i.e. dark. Skip it there and use the solar light/dark schedule instead.
 ;; Android is opt-in rather than skipped, and the reason it looked impossible
 ;; is worth writing down. auto-dark CAN read the Android system theme: its
@@ -248,7 +243,7 @@ check."
                    (not (bound-and-true-p joe/android-auto-dark))))
   :custom
   (custom-safe-themes t)
-  (auto-dark-themes '((au-aurum-night) (au-parchment-day)))
+  (auto-dark-themes '((ef-autumn) (ef-day)))
   :init
   ;; Set before `auto-dark-mode', which reads both at startup. A five-second
   ;; poll is nothing on a desktop and a subprocess every five seconds on a

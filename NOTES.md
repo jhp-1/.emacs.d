@@ -31,18 +31,16 @@ in `joe-core.el` is kept because it costs nothing until something dies.
 
 ## Themes
 
-`joe-ui.el` uses [au-themes](https://github.com/szymonwilczek/au-themes):
-`au-parchment-day` for light and `au-aurum-night` for dark. `<f8>` toggles
+`joe-ui.el` uses [ef-themes](https://github.com/protesilaos/ef-themes):
+`ef-day` for light and `ef-autumn` for dark. `<f8>` toggles
 exactly this pair. Desktop `auto-dark` follows the OS, while Android and the
 console appliance follow the London sunrise/sunset timer. PDF midnight colours
 are refreshed by `enable-theme-functions` for every theme switch.
 
-`au-themes` is installed with `use-package :vc`; GNU ELPA installs its
-`ef-themes` dependency, and `modus-themes` remains installed as its other
-dependency. Upstream source checkouts and revisions are in
-`~/projects/au-themes-install/`. Fresh-host package installation, Android,
-and console rendering have not been verified; only a fresh desktop daemon and
-the running desktop session have been tested.
+GNU ELPA installs `ef-themes` and its `modus-themes` dependency. The old
+`au-themes` installation is retained but no longer loaded by the configuration.
+Fresh-host package installation, Android, and console rendering have not been
+verified.
 
 ## The console appliance (`x270`)
 
@@ -62,7 +60,7 @@ changes behaviour on any other machine**. What it turns off, and why:
 | `native-comp` JIT + trampolines | Same `noexec` constraint: `.elc` is interpreted and fine, `.eln` is `mmap`'d executable and is not. |
 | `nerd-icons*` | The console (kmscon, built without pango) has no font fallback, so unpatched fonts render replacement boxes. |
 | `fontaine` | Font faces are a window-system concept; the console font is set system-wide. |
-| `auto-dark` | No OS appearance setting to poll on a TTY. The solar timer selects `au-parchment-day` or `au-aurum-night` instead. |
+| `auto-dark` | No OS appearance setting to poll on a TTY. The solar timer selects `ef-day` or `ef-autumn` instead. |
 | `pulsar` | No sub-cell rendering in a TTY, so the pulse is a full-width bar rather than a fade. |
 | `pdf-tools`, `saveplace-pdf-view` | Graphical, and native modules can't be built or loaded here. |
 
