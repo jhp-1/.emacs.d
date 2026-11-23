@@ -1,5 +1,17 @@
 ;;; joe-files.el --- Files and buffers configuration -*- lexical-binding: t; -*-
 (setq large-file-warning-threshold nil)
+
+(defun joe/copy-buffer-path ()
+  "Copy the current buffer's file path or default directory to the kill ring."
+  (interactive)
+  (let ((path (or (buffer-file-name (or (buffer-base-buffer) (current-buffer)))
+                  default-directory)))
+    (unless path
+      (user-error "This buffer has no filesystem location"))
+    (setq path (expand-file-name path))
+    (kill-new path)
+    (message "Copied %s" path)))
+
 ;;;; Dired
 (defun joe/dired-toggle-dotfiles ()
   "Toggle showing dotfiles in the current Dired buffer (default: hidden).
